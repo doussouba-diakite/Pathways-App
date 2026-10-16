@@ -1,0 +1,31 @@
+name: Build career data
+
+# Downloads the latest O*NET release and commits data/careers.csv.
+# Runs when the builder changes, on the 1st of every quarter, or by hand.
+on:
+  push:
+    paths: ["scripts/build_careers.py", ".github/workflows/build-data.yml"]
+  schedule:
+    - cron: "0 12 1 1,4,7,10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas
+      - run: python scripts/build_careers.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add data/careers.csv
+          git diff --cached --quiet || git commit -m "Update careers.csv from O*NET"
+          git push
