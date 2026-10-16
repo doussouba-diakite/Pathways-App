@@ -50,7 +50,11 @@ def download() -> tuple[bytes, str]:
 
 
 def read(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
-    path = next(n for n in z.namelist() if n.endswith("/" + name))
+    """Find a file by name, ignoring case and folder (names shift between O*NET releases)."""
+    want = name.lower()
+    path = next((n for n in z.namelist() if n.lower().split("/")[-1] == want), None)
+    if path is None:
+        raise FileNotFoundError(name)
     return pd.read_csv(z.open(path), sep="\t", dtype=str)
 
 
@@ -85,7 +89,8 @@ if __name__ == "__main__":
         out = build(blob)
     except Exception as e:
         z = zipfile.ZipFile(io.BytesIO(blob))
-        report(f"build failed: {type(e).__name__}: {e}; first files: {z.namelist()[:8]}")
+        names = [n.split("/")[-1] for n in z.namelist()]
+        report(f"build failed: {type(e).__name__}: {e}; files: {names}")
         raise
     out.to_csv("data/careers.csv", index=False)
     print(f"wrote data/careers.csv: {len(out):,} careers from O*NET {version}")
