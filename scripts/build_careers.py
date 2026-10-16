@@ -23,15 +23,30 @@ ZONE = {1: "Little or no preparation", 2: "High school, some training", 3: "Trai
         4: "Bachelor's degree", 5: "Graduate degree"}
 
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/126.0 Safari/537.36 pathways-app-data-build",
+           "Accept": "application/zip,*/*"}
+
+
+def report(msg: str) -> None:
+    """Print, and also surface as a GitHub Actions annotation when running in CI."""
+    print(msg)
+    print(f"::warning::{msg}")
+
+
 def download() -> tuple[bytes, str]:
     for v in VERSIONS:
         try:
-            req = urllib.request.Request(URL.format(v=v), headers={"User-Agent": "pathways-app data build"})
+            req = urllib.request.Request(URL.format(v=v), headers=HEADERS)
             with urllib.request.urlopen(req, timeout=120) as r:
-                return r.read(), v
+                blob = r.read()
+            if not blob.startswith(b"PK"):
+                report(f"O*NET {v}: response was not a zip ({blob[:80]!r})")
+                continue
+            return blob, v
         except Exception as e:  # try the next older release
-            print(f"  {v}: {e}")
-    raise SystemExit("Could not download any O*NET release.")
+            report(f"O*NET {v}: {type(e).__name__}: {e}")
+    raise SystemExit("::error::Could not download any O*NET release.")
 
 
 def read(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
@@ -66,6 +81,11 @@ if __name__ == "__main__":
         blob, version = open(sys.argv[1], "rb").read(), sys.argv[1]
     else:
         blob, version = download()
-    out = build(blob)
+    try:
+        out = build(blob)
+    except Exception as e:
+        z = zipfile.ZipFile(io.BytesIO(blob))
+        report(f"build failed: {type(e).__name__}: {e}; first files: {z.namelist()[:8]}")
+        raise
     out.to_csv("data/careers.csv", index=False)
     print(f"wrote data/careers.csv: {len(out):,} careers from O*NET {version}")
