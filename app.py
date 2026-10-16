@@ -1,12 +1,15 @@
 """Pathways: find colleges you can get into and afford, careers that fit you, and aid you qualify for."""
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from pathways import aid as aidmod
+from pathways.advisor import SUGGESTED, Profile, ask
 from pathways.careers import LETTERS, NAMES, PLAIN, QUIZ, career_vector, match_careers, profile_from_answers, top_letters
 from pathways.colleges import FIT_ORDER, Student, income_bracket, match_colleges
 from pathways.data import careers_are_sample, load_careers, load_colleges
@@ -39,6 +42,9 @@ st.markdown("""
 .bar {height: 8px; border-radius: 99px; background: rgba(128,128,128,.18); overflow: hidden; margin: 6px 0;}
 .bar > div {height: 100%; border-radius: 99px; background: linear-gradient(90deg,#6c5ce7,#00b894);}
 .kpi {font-size: 1.35rem; font-weight: 700;}
+.tool {display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: .72rem; font-weight: 600;
+       margin: 0 6px 6px 0; background: rgba(108,92,231,.14); color: #6c5ce7;}
+.check {font-size: .8rem; margin-top: 4px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,6 +65,13 @@ def money(v) -> str:
 
 def pct(v) -> str:
     return "—" if v is None or pd.isna(v) else f"{v:.0%}"
+
+
+def api_key():
+    try:
+        return st.secrets.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    except Exception:
+        return os.environ.get("ANTHROPIC_API_KEY")
 
 
 if "saved" not in st.session_state:
@@ -97,6 +110,10 @@ with st.sidebar:
         budget = st.slider("Max I can pay per year after aid", 0, 60_000, 60_000, 1_000, format="$%d",
                            help="Leave at the max to see everything.")
 
+    if not api_key():
+        st.text_input("✨ Anthropic API key (for the AI advisor)", type="password", key="user_key",
+                      help="Used for this session only, never stored.")
+
 student = Student(gpa=gpa, sat=sat, act=act, states=states, size=size, control=control or "Any",
                   years=years or "4-year", hbcu_only=hbcu, womens_only=womens, major=major,
                   max_cost=None if budget >= 60_000 else budget)
@@ -127,8 +144,61 @@ st.markdown(f"""
   </div>
 </div>""", unsafe_allow_html=True)
 
-tab_col, tab_car, tab_aid, tab_map, tab_list = st.tabs(
-    ["🎓 Colleges", "🧭 Careers", "💸 Aid", "🗺️ Map", f"⭐ My list ({len(st.session_state.saved)})"])
+tab_ai, tab_col, tab_car, tab_aid, tab_map, tab_list = st.tabs(
+    ["✨ Ask the AI advisor", "🎓 Colleges", "🧭 Careers", "💸 Aid", "🗺️ Map",
+     f"⭐ My list ({len(st.session_state.saved)})"])
+
+# ── AI advisor (Claude + the matching engines) ───────────────────────────────
+KEY = api_key() or st.session_state.get("user_key") or None
+TOOL_LABEL = {"search_colleges": "searched colleges", "college_details": "college data",
+              "find_careers": "O*NET careers", "aid_estimate": "aid screener", "majors_for": "major lookup"}
+with tab_ai:
+    st.markdown("#### Ask anything about colleges, careers, or paying for school")
+    st.caption("The advisor is Claude, but it doesn't answer from memory. It calls the same tested engines as the "
+               "rest of Pathways, using your profile on the left, and a fact-checker confirms every dollar amount "
+               "and percentage in its answer came from real data.")
+    chat = st.session_state.setdefault("chat", [])       # (role, text, tools, (verified, unverified))
+    st.session_state.setdefault("history", [])
+    for role, text_, tools, check in chat:
+        with st.chat_message(role, avatar="🧭" if role == "assistant" else "🎓"):
+            if tools:
+                st.markdown("".join(f'<span class="tool">🔧 {TOOL_LABEL.get(n, n)}</span>' for n, _ in tools),
+                            unsafe_allow_html=True)
+            st.markdown(text_.replace("$", "\\$"))
+            if check:
+                ok, bad = check
+                if bad:
+                    st.markdown(f'<div class="check">⚠️ <b>Double-check:</b> {", ".join(bad)} '
+                                "didn't come from Pathways data.</div>", unsafe_allow_html=True)
+                elif ok:
+                    st.markdown(f'<div class="check">✅ <b>Fact-checked:</b> all {len(ok)} '
+                                f'number{"s" if len(ok) != 1 else ""} match real data.</div>',
+                                unsafe_allow_html=True)
+    if not chat:
+        cols = st.columns(3)
+        for i, q in enumerate(SUGGESTED):
+            if cols[i % 3].button(q, key=f"sq_{i}", width="stretch"):
+                st.session_state.pending = q
+                st.rerun()
+    question = st.chat_input("Ask the advisor…", disabled=not KEY) or st.session_state.pop("pending", None)
+    if not KEY:
+        st.info("Add an Anthropic API key in the sidebar to chat. Everything else in Pathways works without one.")
+    elif question:
+        chat.append(("user", question, [], None))
+        prof = Profile(student, income, int(household), status, ny, first_gen, profile if answered else {})
+        with st.spinner("Checking the data…"):
+            try:
+                turn, st.session_state.history = ask(question, prof, colleges, careers_df(),
+                                                     st.session_state.history, api_key=KEY)
+                g = turn.grounding
+                chat.append(("assistant", turn.answer, turn.tools_used,
+                             ([c.text for c in g.verified], [c.text for c in g.unverified]) if g else None))
+            except Exception as e:
+                chat.append(("assistant", f"Sorry, I couldn't reach the AI: {e}", [], None))
+        st.rerun()
+    if chat and st.button("Start over", key="clear_chat"):
+        st.session_state.chat, st.session_state.history = [], []
+        st.rerun()
 
 # ── Colleges ─────────────────────────────────────────────────────────────────
 with tab_col:

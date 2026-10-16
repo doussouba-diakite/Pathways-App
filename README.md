@@ -8,11 +8,37 @@ Most college search tools assume you have a counselor. A lot of students don't. 
 2. **What would I actually pay?** Real average net price for families at *your* income, not the sticker price.
 3. **What careers fit me?** A six-question interest quiz matched against U.S. Department of Labor career profiles.
 
+And when a student has a question the screens don't answer, they can **ask the AI advisor**.
+
 ![Colleges tab](docs/colleges.png)
 
 | Careers | Aid |
 | --- | --- |
 | ![Careers](docs/careers.png) | ![Aid](docs/aid.png) |
+
+## The AI advisor: Claude as an agent over the matching engines
+Students ask in their own words: *"Find me cheap nursing programs in New York"*, *"Is Binghamton a reach for me?"*, *"How much aid could I get?"* An AI that answers from memory will make up acceptance rates and prices, and for a student choosing where to apply, a wrong number is worse than no number. So Claude answers by calling Pathways' own tested engines (`pathways/advisor.py`):
+
+```
+question ─► Claude ─► tool_use ─► Python engine ─► tool_result ─► Claude ─► … ─► answer ─► fact-check
+```
+
+| Tool | Engine it uses |
+| --- | --- |
+| `search_colleges` | filter → Safety/Match/Reach → net price at the student's income, with overrides (state, major, budget, sort) |
+| `college_details` | one school: the student's fit and why, net price at every income level, costs, outcomes, biggest majors |
+| `find_careers` | O*NET careers, ranked by the student's quiz results when they've taken it |
+| `aid_estimate` | Pell, NY TAP, NYS Dream Act, HEOP/EOP/SEEK screening |
+| `majors_for` | typed interest → federal major families, and how many schools offer them |
+
+**Design choices**
+- **Facts come from tools, language comes from Claude.** The system prompt forbids stating any number from memory.
+- **The profile goes to the tools, not the prompt.** The student's income, GPA, and status are applied inside the Python tools; Claude only sees results. A test checks the income never appears in what's sent to the API.
+- **Every answer is fact-checked** (`pathways/grounding.py`). Python pulls each dollar amount and percentage out of the answer and looks for it in the tool results (rounding within 3% is allowed). The chat shows ✅ *fact-checked*, or ⚠️ *double-check* naming the exact numbers with no source.
+- **Written for the students it serves:** first-gen, low-income, and immigrant students. Fit labels are called estimates, net price is explained, and DACA or undocumented students are pointed to the NYS Dream Act without being asked about documents.
+- **Safe loop:** at most 6 steps; bad tool arguments go back to Claude as errors instead of crashing. Tested with a fake Claude client, so `pytest` needs no API key.
+
+![AI advisor](docs/advisor.png)
 
 ## How the matching works
 
@@ -44,8 +70,10 @@ Price and aid *should* change with income, and they do. The audit also shows tha
 
 ## Project structure
 ```
-app.py                    Streamlit interface (5 tabs, interactive Plotly charts)
+app.py                    Streamlit interface (6 tabs, AI chat, interactive Plotly charts)
 pathways/
+  advisor.py              the AI advisor: Claude + 5 tools + an agent loop
+  grounding.py            fact-checker for AI answers
   colleges.py             filter, classify, rank, balance
   careers.py              quiz, RIASEC profile, cosine similarity
   aid.py                  Pell, TAP, Dream Act, opportunity programs
@@ -55,7 +83,7 @@ scripts/
   build_colleges.py       builds data/colleges.csv from College Scorecard
   build_careers.py        builds data/careers.csv from O*NET
   fairness_audit.py       the fairness check above
-tests/                    23 pytest tests
+tests/                    32 pytest tests
 .github/workflows/        rebuilds career data from O*NET automatically
 ```
 
@@ -65,6 +93,7 @@ pip install -r requirements.txt
 streamlit run app.py
 pytest                      # pip install -r requirements-dev.txt first
 ```
+The AI advisor needs an Anthropic API key: paste it in the sidebar, or put `ANTHROPIC_API_KEY` in `.streamlit/secrets.toml` for a private deployment. Everything else works without one.
 
 ## Data sources
 - **Colleges:** U.S. Department of Education [College Scorecard](https://collegescorecard.ed.gov/data/) (public domain), via the [collegeScorecard](https://github.com/cran/collegeScorecard) and [scorecard-db](https://github.com/gadenbuie/scorecard-db) mirrors. Net price, admissions, test scores, graduation rates, earnings, and majors.
