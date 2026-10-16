@@ -2,7 +2,7 @@
 
 Downloads the O*NET text release and joins three files:
   Occupation Data.txt   title + description
-  Interests.txt         RIASEC scores (scale "OI", 1-7)
+  Career Interest Types.txt (Interests.txt before 30.3)  RIASEC scores (scale "OI", 1-7)
   Job Zones.txt         preparation level (1 little, 5 extensive)
 
 Usage: python scripts/build_careers.py            (tries the newest release first)
@@ -61,7 +61,11 @@ def read(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
 def build(blob: bytes) -> pd.DataFrame:
     z = zipfile.ZipFile(io.BytesIO(blob))
     occ = read(z, "Occupation Data.txt")
-    interests = read(z, "Interests.txt")
+    # O*NET 30.3 renamed Interests.txt to "Career Interest Types.txt" (same columns).
+    try:
+        interests = read(z, "Career Interest Types.txt")
+    except FileNotFoundError:
+        interests = read(z, "Interests.txt")
     zones = read(z, "Job Zones.txt")
 
     oi = interests[interests["Scale ID"] == "OI"].copy()
