@@ -157,3 +157,16 @@ def test_majors_tolerate_typos_and_ai_fallback_is_restricted():
 def test_no_test_score_tiers(rate, gpa, expected):
     s = school(sat_25=None, sat_75=None, act_25=None, act_75=None, admit_rate=rate)
     assert classify(Student(gpa=gpa), s)[0] == expected
+
+
+def test_cuny_suny_rank_first_within_each_fit_group():
+    colleges = pd.read_csv(Path(__file__).resolve().parent.parent / "data" / "colleges.csv")
+    s = Student(gpa=3.3, states=["NY"], years="Any", home_state="NY")
+    df = match_colleges(colleges, s, income=45_000, n=15)
+    for fit in ("Safety", "Match"):
+        grp = df[df["fit"] == fit]
+        if grp["home_public"].any():
+            # once a private school appears in a group, no CUNY/SUNY comes after it
+            assert grp["home_public"].tolist() == sorted(grp["home_public"].tolist(), reverse=True)
+    assert set(df.loc[df["home_public"], "system"]) <= {"CUNY", "SUNY"}
+    assert "United States Merchant Marine Academy" not in set(df.loc[df["home_public"], "name"])

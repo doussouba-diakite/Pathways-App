@@ -158,6 +158,10 @@ with st.sidebar:
         control = st.segmented_control("Type", ["Any", "Public", "Private"], key="control")
         size = st.selectbox("Size", ["Any", "Small (under 5k)", "Medium (5k-15k)", "Large (15k+)"])
         c1, c2 = st.columns(2)
+        cuny_first = st.toggle("CUNY & SUNY first", value=True, key="cunyfirst",
+                               help="For New York residents: CUNY and SUNY colleges you qualify for come first in "
+                                    "each group. They're the most affordable for NY families and offer SEEK, "
+                                    "College Discovery, and EOP.")
         hbcu = c1.checkbox("HBCUs only", help="Only Historically Black Colleges and Universities.")
         womens = c2.checkbox("Women's colleges only",
                              help="Only colleges that admit women only, like Barnard. Leave this off to see "
@@ -181,7 +185,8 @@ student = Student(gpa=gpa, sat=sat, act=act, states=states, size=size, control=c
                   max_cost=None if budget >= 60_000 else budget,
                   home=home[:2] if home else None,
                   max_miles=None if how_far == DISTANCES[0] else float(how_far.split()[0]),
-                  major_families=fams or None)
+                  major_families=fams or None,
+                  home_state="NY" if (ny and cuny_first) else None)
 aid = aidmod.screen(aidmod.AidInput(income=income, household=int(household), ny_resident=ny,
                                     status=status, first_gen=first_gen))
 colleges = colleges_df()
@@ -367,6 +372,8 @@ with tab_col:
         for i, (_, r) in enumerate(show.head(30).iterrows()):
             with cols[i % 2]:
                 badge = f'<span class="pill" style="background:{FIT_COLORS[r["fit"]]}">{r["fit"].upper()}</span>'
+                if r.get("system"):
+                    badge += f'<span class="pill" style="background:{"#1d4ed8" if r["system"] == "CUNY" else "#0f766e"}">{r["system"]}</span>'
                 fee = r.get("app_fee")
                 policy = r.get("test_policy")
                 tags = " · ".join(t for t in [

@@ -39,6 +39,7 @@ class Student:
     home: tuple[float, float] | None = None   # (lat, lon) from the student's ZIP code
     max_miles: float | None = None    # only schools within this distance (combined with states, if any)
     major_families: list[str] | None = None   # CIP codes already resolved (e.g. by the AI fallback)
+    home_state: str | None = None     # e.g. "NY": that state's public colleges (CUNY/SUNY) rank first in each group
 
 
 def classify(student: Student, school: pd.Series) -> tuple[str, str]:
@@ -124,6 +125,14 @@ def filter_colleges(colleges: pd.DataFrame, s: Student) -> pd.DataFrame:
     return df
 
 
+def public_system(school: pd.Series) -> str:
+    """'CUNY' or 'SUNY' for New York's public colleges, '' otherwise."""
+    name = str(school.get("name", ""))
+    if school.get("state") != "NY" or school.get("control") != 1 or name.startswith("United States"):
+        return ""  # federal academies are public but not part of CUNY or SUNY
+    return "CUNY" if "CUNY" in str(school.get("name", "")) else "SUNY"
+
+
 def income_bracket(income: float) -> str:
     """College Scorecard reports average net price in five family-income brackets."""
     for limit, label in [(30_000, "0_30k"), (48_000, "30_48k"), (75_000, "48_75k"), (110_000, "75_110k")]:
@@ -156,9 +165,13 @@ def match_colleges(colleges: pd.DataFrame, s: Student, income: float | None = No
     cols = [f"pcip_{f}" for f in fams if f"pcip_{f}" in df.columns]
     df["major_share"] = df[cols].fillna(0).sum(axis=1) if cols else 0.0
 
-    # Rank inside each bucket: strongest program, then graduation rate, then cheapest.
-    df = df.sort_values(["major_share", "grad_rate", "net_cost"], ascending=[False, False, True],
-                        na_position="last")
+    # Rank inside each bucket: the student's own state's public colleges first (in-state tuition, and in NY
+    # the SEEK / EOP opportunity programs), then strongest program, graduation rate, and price.
+    df["system"] = df.apply(public_system, axis=1)
+    df["home_public"] = ((df["control"] == 1) & (df["state"] == s.home_state)
+                         & ~df["name"].str.startswith("United States")) if s.home_state else False
+    df = df.sort_values(["home_public", "major_share", "grad_rate", "net_cost"],
+                        ascending=[False, False, False, True], na_position="last")
 
     if n == 0:
         return df
