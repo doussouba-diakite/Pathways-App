@@ -67,8 +67,10 @@ def classify(student: Student, school: pd.Series) -> tuple[str, str]:
         # schools are Safety unless the GPA is very strong.
         if pct >= 85 or school.get("two_year") == 1:
             fit = SAFETY
-        elif pct >= 60:
-            fit = SAFETY if gpa >= 3.7 else MATCH
+        elif pct >= 70:
+            fit = SAFETY if gpa >= 3.0 else MATCH
+        elif pct >= 50:
+            fit = SAFETY if gpa >= 3.7 else MATCH if gpa >= 2.8 else REACH
         elif pct >= 35:
             fit = MATCH if gpa >= 3.5 else REACH
         else:

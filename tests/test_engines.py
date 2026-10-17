@@ -133,3 +133,16 @@ def test_radius_replaces_state_filter_and_crosses_state_lines():
     df = match_colleges(colleges, Student(gpa=3.3, states=["NY"], home=home, max_miles=25), income=45_000, n=0)
     assert len(df) and df["miles"].max() <= 25
     assert "NJ" in set(df["state"])  # a radius from Brooklyn reaches New Jersey
+
+
+@pytest.mark.parametrize("rate,gpa,expected", [
+    (0.80, 3.3, SAFETY),   # e.g. City Tech: a 3.3 student is very likely admitted
+    (0.58, 3.3, MATCH),    # e.g. Brooklyn College
+    (0.58, 2.5, REACH),
+    (0.47, 3.3, REACH),    # e.g. Baruch
+    (0.47, 3.6, MATCH),
+    (0.20, 4.0, REACH),
+])
+def test_no_test_score_tiers(rate, gpa, expected):
+    s = school(sat_25=None, sat_75=None, act_25=None, act_75=None, admit_rate=rate)
+    assert classify(Student(gpa=gpa), s)[0] == expected

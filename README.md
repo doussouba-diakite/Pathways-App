@@ -45,10 +45,20 @@ question ─► Claude ─► tool_use ─► Python engine ─► tool_result �
 ## How the matching works
 
 ### Colleges: filter → classify → rank → balance
-1. **Filter** ~3,100 public and nonprofit colleges by state, size, type, 2- or 4-year, HBCU, women's colleges, budget, and major. Majors match on the share of degrees each school awards in that field (federal CIP codes). For-profit schools are excluded.
+1. **Filter** ~3,100 public and nonprofit colleges by state or distance from a home ZIP code, size, type, 2- or 4-year, HBCU, women's colleges, budget, and major. Majors match on the share of degrees each school awards in that field (federal CIP codes). For-profit schools are excluded.
 2. **Classify** each school with the strongest evidence available:
    - SAT or ACT vs. the school's 25th and 75th percentiles (at or above 75th = Safety, inside the middle 50% = Match, below = Reach)
-   - No scores? Acceptance rate plus GPA, deliberately conservative
+   - No scores? Acceptance rate plus GPA:
+
+     | Share of applicants admitted | Safety | Match | Reach |
+     | --- | --- | --- | --- |
+     | 85%+ or community college | always | | |
+     | 70-85% | GPA 3.0+ | below 3.0 | |
+     | 50-70% | GPA 3.7+ | GPA 2.8-3.7 | below 2.8 |
+     | 35-50% | | GPA 3.5+ | below 3.5 |
+     | under 35% | | | always |
+
+     These are rules of thumb, tested in `tests/test_engines.py`, and every label says which rule it used.
    - No data at all? **Unknown**, never a guess
    Every label comes with a plain-English reason, so a student or counselor can check it.
 3. **Rank** within each group by program strength in the student's major, then graduation rate, then net price.

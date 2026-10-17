@@ -142,8 +142,10 @@ with st.sidebar:
         control = st.segmented_control("Type", ["Any", "Public", "Private"], key="control")
         size = st.selectbox("Size", ["Any", "Small (under 5k)", "Medium (5k-15k)", "Large (15k+)"])
         c1, c2 = st.columns(2)
-        hbcu = c1.checkbox("HBCU")
-        womens = c2.checkbox("Women's")
+        hbcu = c1.checkbox("HBCUs only", help="Only Historically Black Colleges and Universities.")
+        womens = c2.checkbox("Women's colleges only",
+                             help="Only colleges that admit women only, like Barnard. Leave this off to see "
+                                  "every school; all of them admit women.")
 
     with st.expander("💸 Money", expanded=True):
         income = st.slider("Household income ($/yr)", 0, 200_000, 45_000, 1_000, format="$%d")
