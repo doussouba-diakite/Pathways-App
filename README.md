@@ -45,7 +45,7 @@ question ─► Claude ─► tool_use ─► Python engine ─► tool_result �
 ## How the matching works
 
 ### Colleges: filter → classify → rank → balance
-1. **Filter** ~3,100 public and nonprofit colleges by state or distance from a home ZIP code, size, type, 2- or 4-year, HBCU, women's colleges, budget, and major. Majors match on the share of degrees each school awards in that field (federal CIP codes). For-profit schools are excluded.
+1. **Filter** ~3,100 public and nonprofit colleges by state or distance from a home ZIP code, size, type, 2- or 4-year, HBCU, women's colleges, budget, and major. Majors match on the share of degrees each school awards in that field (federal CIP codes). Typed majors go through ~200 known phrases, then typo matching ("anthropolopy" → anthropology), then, only if both fail, Claude picks from the official CIP list (it can't invent a category; the tool's enum and a second check enforce that). For-profit schools are excluded.
 2. **Classify** each school with the strongest evidence available:
    - SAT or ACT vs. the school's 25th and 75th percentiles (at or above 75th = Safety, inside the middle 50% = Match, below = Reach)
    - No scores? Acceptance rate plus GPA:

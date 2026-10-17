@@ -15,7 +15,7 @@ from pathways.careers import LETTERS, NAMES, PLAIN, QUIZ, career_vector, match_c
 from pathways.colleges import FIT_ORDER, Student, income_bracket, match_colleges
 from pathways.data import careers_are_sample, load_careers, load_colleges
 from pathways.distance import zip_location
-from pathways.majors import CIP_FAMILIES, cip_families_for
+from pathways.majors import CIP_FAMILIES, ai_families, cip_families_for, suggest_spelling
 from pathways.report import build_pdf
 
 st.set_page_config(page_title="Pathways", page_icon="🧭", layout="wide")
@@ -78,6 +78,11 @@ def pct(v) -> str:
     return "—" if v is None or pd.isna(v) else f"{v:.0%}"
 
 
+@st.cache_data(show_spinner="Matching your major…")
+def ai_major(text: str, key: str) -> list[str]:
+    return ai_families(text, api_key=key)
+
+
 def api_key():
     try:
         return st.secrets.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
@@ -114,11 +119,21 @@ with st.sidebar:
     sat = st.slider("SAT total", 400, 1600, 1150, 10) if test == "SAT" else None
     act = st.slider("ACT composite", 1, 36, 24) if test == "ACT" else None
     major = st.text_input("Intended major", placeholder="computer science, nursing, business…", key="major")
-    fams = cip_families_for(major)
+    fams, by_ai = cip_families_for(major), False
+    key_now = api_key() or st.session_state.get("user_key")
+    if major and not fams and key_now:
+        try:
+            fams, by_ai = ai_major(major, key_now), True
+        except Exception:
+            fams = []
     if major and not fams:
-        st.caption("No match for that major yet. Try a broader word, like 'engineering' or 'health'.")
+        st.caption("No match for that major yet. Try a broader word, like 'engineering' or 'health'"
+                   + ("" if key_now else ", or add an API key and the AI will match it") + ".")
     elif fams:
-        st.caption("Matching programs in: " + ", ".join(CIP_FAMILIES[f] for f in fams))
+        fixed = suggest_spelling(major)
+        st.caption(("✨ AI matched this to: " if by_ai else
+                    f"Showing results for **{fixed}** · " if fixed else "Matching programs in: ")
+                   + ", ".join(CIP_FAMILIES[f] for f in fams))
 
     with st.expander("📍 Distance from home", expanded=True):
         c1, c2 = st.columns([1, 1.4])
@@ -129,15 +144,15 @@ with st.sidebar:
             st.caption("We don't recognize that ZIP code. Use 5 digits, like 11201.")
         elif home:
             st.caption(f"📍 {home[2]}" + ("" if how_far == DISTANCES[0] else
-                       f" · showing schools within {how_far}, in any state"))
+                       f" · schools within {how_far}. Clear **States** below to include every state in range."))
 
     n_show = st.slider("How many schools in my list", 5, 50, step=5, key="n",
                        help="Your list keeps a balance of Safety, Match, and Reach schools.")
 
     with st.expander("🏫 School preferences", expanded=True):
-        states = st.multiselect("States", STATES, key="states",
-                                disabled=bool(home) and how_far != DISTANCES[0],
-                                help="Turned off while a distance is set: a radius can cross state lines.")
+        states = st.multiselect("States", STATES, key="states", placeholder="Any state",
+                                help="Pick as many as you like. With a distance set, you see schools in these "
+                                     "states within range; leave it empty for every state in range.")
         years = st.segmented_control("Program length", ["4-year", "2-year", "Any"], key="years")
         control = st.segmented_control("Type", ["Any", "Public", "Private"], key="control")
         size = st.selectbox("Size", ["Any", "Small (under 5k)", "Medium (5k-15k)", "Large (15k+)"])
@@ -164,7 +179,8 @@ student = Student(gpa=gpa, sat=sat, act=act, states=states, size=size, control=c
                   years=years or "4-year", hbcu_only=hbcu, womens_only=womens, major=major,
                   max_cost=None if budget >= 60_000 else budget,
                   home=home[:2] if home else None,
-                  max_miles=None if how_far == DISTANCES[0] else float(how_far.split()[0]))
+                  max_miles=None if how_far == DISTANCES[0] else float(how_far.split()[0]),
+                  major_families=fams or None)
 aid = aidmod.screen(aidmod.AidInput(income=income, household=int(household), ny_resident=ny,
                                     status=status, first_gen=first_gen))
 colleges = colleges_df()
@@ -337,8 +353,7 @@ with tab_col:
                 params["major"] = major
             if home and how_far != DISTANCES[0]:
                 params |= {"zip": zip_code, "miles": how_far}
-            else:
-                params["states"] = ",".join(states)
+            params["states"] = ",".join(states)
             base = (st.context.url or "").split("?")[0]
             st.caption("Anyone with this link sees the same search. Your income, status, and name are not included.")
             st.code(f"{base}?{urlencode(params)}", language=None, wrap_lines=True)

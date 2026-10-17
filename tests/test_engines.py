@@ -126,13 +126,24 @@ def test_zip_lookup_and_miles():
     assert zip_location("abcde") is None and zip_location("00000") is None
 
 
-def test_radius_replaces_state_filter_and_crosses_state_lines():
+def test_radius_and_states_work_together():
     from pathways.distance import zip_location
     colleges = pd.read_csv(Path(__file__).resolve().parent.parent / "data" / "colleges.csv")
     home = zip_location("11201")[:2]
-    df = match_colleges(colleges, Student(gpa=3.3, states=["NY"], home=home, max_miles=25), income=45_000, n=0)
-    assert len(df) and df["miles"].max() <= 25
-    assert "NJ" in set(df["state"])  # a radius from Brooklyn reaches New Jersey
+    anywhere = match_colleges(colleges, Student(gpa=3.3, states=[], home=home, max_miles=25), income=45_000, n=0)
+    assert len(anywhere) and anywhere["miles"].max() <= 25
+    assert "NJ" in set(anywhere["state"])  # no states picked: a radius from Brooklyn reaches New Jersey
+    ny_only = match_colleges(colleges, Student(gpa=3.3, states=["NY"], home=home, max_miles=25), income=45_000, n=0)
+    assert set(ny_only["state"]) == {"NY"} and len(ny_only) < len(anywhere)
+
+
+def test_majors_tolerate_typos_and_ai_fallback_is_restricted():
+    from types import SimpleNamespace as NS
+    from pathways.majors import ai_families
+    assert cip_families_for("anthropolopy") == ["45"] and cip_families_for("nursign") == ["51"]
+    assert cip_families_for("basket weaving") == []
+    fake = NS(messages=NS(create=lambda **kw: NS(content=[NS(type="tool_use", input={"families": ["50", "99"]})])))
+    assert ai_families("basket weaving", client=fake) == ["50"]  # an invented code is dropped
 
 
 @pytest.mark.parametrize("rate,gpa,expected", [

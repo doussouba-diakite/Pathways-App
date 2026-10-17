@@ -37,7 +37,8 @@ class Student:
     major: str = ""
     max_cost: float | None = None     # yearly budget after aid, optional
     home: tuple[float, float] | None = None   # (lat, lon) from the student's ZIP code
-    max_miles: float | None = None    # only schools within this distance; replaces the state filter
+    max_miles: float | None = None    # only schools within this distance (combined with states, if any)
+    major_families: list[str] | None = None   # CIP codes already resolved (e.g. by the AI fallback)
 
 
 def classify(student: Student, school: pd.Series) -> tuple[str, str]:
@@ -96,10 +97,9 @@ def filter_colleges(colleges: pd.DataFrame, s: Student) -> pd.DataFrame:
     df = colleges
     df = df[df["control"].isin([1, 2])]  # leave out for-profit schools
     if s.home and s.max_miles:
-        # A radius crosses state lines (Brooklyn -> NJ, CT), so it replaces the state filter.
         df = add_miles(df, s.home)
         df = df[df["miles"] <= s.max_miles]
-    elif s.states:
+    if s.states:  # with a distance too: schools in these states AND within range
         df = df[df["state"].isin(s.states)]
     lo, hi = SIZE_BANDS.get(s.size, SIZE_BANDS["Any"])
     if s.size != "Any":
@@ -116,8 +116,8 @@ def filter_colleges(colleges: pd.DataFrame, s: Student) -> pd.DataFrame:
         df = df[df["hbcu"] == 1]
     if s.womens_only:
         df = df[df["womens"] == 1]
-    if s.major:
-        fams = cip_families_for(s.major)
+    if s.major or s.major_families:
+        fams = s.major_families or cip_families_for(s.major)
         cols = [f"pcip_{f}" for f in fams if f"pcip_{f}" in df.columns]
         if cols:
             df = df[df[cols].fillna(0).sum(axis=1) > 0]
@@ -152,7 +152,7 @@ def match_colleges(colleges: pd.DataFrame, s: Student, income: float | None = No
     if s.max_cost:
         df = df[df["net_cost"].isna() | (df["net_cost"] <= s.max_cost)]
 
-    fams = cip_families_for(s.major) if s.major else []
+    fams = s.major_families or (cip_families_for(s.major) if s.major else [])
     cols = [f"pcip_{f}" for f in fams if f"pcip_{f}" in df.columns]
     df["major_share"] = df[cols].fillna(0).sum(axis=1) if cols else 0.0
 
