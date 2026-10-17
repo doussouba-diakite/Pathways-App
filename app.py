@@ -100,7 +100,7 @@ if "restored" not in st.session_state:
                 st.session_state[k] = cast(st.query_params[k])
             except ValueError:
                 pass
-    for k, v in {"states": ["NY"], "years": "4-year", "control": "Any", "fitf": "All"}.items():
+    for k, v in {"states": ["NY"], "years": "4-year", "control": "Any", "fitf": "All", "gpa": 3.3, "n": 15}.items():
         st.session_state.setdefault(k, v)
 
 DISTANCES = ["Anywhere in my states", "10 miles", "25 miles", "50 miles", "100 miles", "250 miles"]
@@ -109,7 +109,7 @@ DISTANCES = ["Anywhere in my states", "10 miles", "25 miles", "50 miles", "100 m
 with st.sidebar:
     st.markdown("## 🧭 Your profile")
     name = st.text_input("First name (optional)", placeholder="Taty")
-    gpa = st.slider("Unweighted GPA", 1.5, 4.0, 3.3, 0.05, key="gpa")
+    gpa = st.slider("Unweighted GPA", 1.5, 4.0, step=0.05, key="gpa")
     test = st.segmented_control("Test scores", ["None", "SAT", "ACT"], default="None")
     sat = st.slider("SAT total", 400, 1600, 1150, 10) if test == "SAT" else None
     act = st.slider("ACT composite", 1, 36, 24) if test == "ACT" else None
@@ -131,7 +131,7 @@ with st.sidebar:
             st.caption(f"📍 {home[2]}" + ("" if how_far == DISTANCES[0] else
                        f" · showing schools within {how_far}, in any state"))
 
-    n_show = st.slider("How many schools in my list", 5, 50, 15, 5, key="n",
+    n_show = st.slider("How many schools in my list", 5, 50, step=5, key="n",
                        help="Your list keeps a balance of Safety, Match, and Reach schools.")
 
     with st.expander("🏫 School preferences", expanded=True):
