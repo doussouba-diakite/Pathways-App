@@ -109,7 +109,7 @@ pytest                      # pip install -r requirements-dev.txt first
 The AI advisor needs an Anthropic API key: paste it in the sidebar, or put `ANTHROPIC_API_KEY` in `.streamlit/secrets.toml` for a private deployment. Everything else works without one.
 
 ## Data sources
-- **IPEDS** (U.S. Department of Education, public domain): application fees (IC) and SAT/ACT policy (ADM), built by `scripts/build_admissions.py` in GitHub Actions. Federal data has no application deadlines.
+- **IPEDS** (U.S. Department of Education, public domain): application fees (IC) and SAT/ACT policy (ADM), built by `scripts/build_admissions.py` in GitHub Actions. Federal data has no application deadlines. The IPEDS directory (HD) is also used to drop colleges that have closed (16 closures in 2024, including Wells College and the University of the Arts).
 - **Colleges:** U.S. Department of Education [College Scorecard](https://collegescorecard.ed.gov/data/) (public domain), via the [collegeScorecard](https://github.com/cran/collegeScorecard) and [scorecard-db](https://github.com/gadenbuie/scorecard-db) mirrors. Net price, admissions, test scores, graduation rates, earnings, and majors.
 - **Careers:** This app incorporates information from the [O*NET Database](https://www.onetcenter.org/database.html) by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA), used under the [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license. O*NET® is a trademark of USDOL/ETA.
 - **Aid rules:** [FSA](https://fsapartners.ed.gov/), [HESC](https://hesc.ny.gov/), [SUNY EOP](https://www.suny.edu/attend/academics/eop/).

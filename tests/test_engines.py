@@ -177,3 +177,12 @@ def test_undecided_students_get_major_ideas_that_resolve():
     ideas = majors_for_interests(["S", "I"])
     assert ideas[:2] == ["nursing", "biology"] and len(ideas) == len(set(ideas))
     assert all(cip_families_for(m) for m in ideas)  # every suggestion maps to real major families
+
+
+def test_closed_colleges_are_not_shown():
+    from pathways.data import DATA, load_colleges
+    if not (DATA / "admissions.csv").exists():
+        pytest.skip("admissions data not built")
+    names = set(load_colleges()["name"])
+    assert "Wells College" not in names and "University of the Arts" not in names  # both closed in 2024
+    assert "Barnard College" in names

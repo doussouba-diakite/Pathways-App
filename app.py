@@ -173,8 +173,10 @@ with st.sidebar:
                                     "College Discovery, and EOP.")
         hbcu = c1.checkbox("HBCUs only", help="Only Historically Black Colleges and Universities.")
         womens = c2.checkbox("Women's colleges only",
-                             help="Only colleges that admit women only, like Barnard. Leave this off to see "
-                                  "every school; all of them admit women.")
+                             help="Only colleges that admit women only, like Barnard (about 30 in the U.S.). "
+                                  "Women's programs inside co-ed universities, like Stern College for Women at "
+                                  "Yeshiva, aren't listed separately in federal data. Leave this off to see every "
+                                  "school; all of them admit women.")
 
     with st.expander("💸 Money", expanded=True):
         income = st.number_input("Household income per year ✱", min_value=0, max_value=2_000_000, value=None,
