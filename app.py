@@ -308,8 +308,13 @@ with tab_ai:
             if cols[i % 3].button(q, key=f"sq_{i}", width="stretch"):
                 st.session_state.pending = q
                 st.rerun()
-    question = st.chat_input("Ask the advisor…", disabled=not KEY) or st.session_state.pop("pending", None)
-    if not KEY:
+    question = (st.chat_input("Ask the advisor…", disabled=not (KEY and ready))
+                or st.session_state.pop("pending", None))
+    if not ready:
+        st.session_state.pop("pending", None)
+        question = None
+        finish_profile()
+    elif not KEY:
         st.info("Add an Anthropic API key in the sidebar to chat. Everything else in Pathways works without one.")
     elif question:
         chat.append(("user", question, [], None))
