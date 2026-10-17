@@ -325,6 +325,9 @@ with tab_col:
             show, title = picks, "Your balanced list"
 
         st.markdown(f"### {title} ({len(show)})")
+        st.caption("Application fees and SAT/ACT policies are from federal IPEDS data (2023). Policies change, so "
+                   "confirm on each school's website. Many schools waive the fee if you qualify for Pell or "
+                   "use a Common App fee waiver.")
         f1, f2 = st.columns([1.2, 1])
         f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], key="fitf")
         sorts = ["Best match", "Cheapest", "Highest graduation"] + (["Closest"] if home else [])
