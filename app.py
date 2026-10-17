@@ -336,7 +336,8 @@ with tab_col:
 
         # Take your matches with you: spreadsheet, PDF, or a link
         export = show[["name", "city", "state", "fit", "why", "net_cost", "grad_rate", "admit_rate",
-                       "earnings_10y", "miles", "website"]].rename(columns={
+                       "earnings_10y", "miles", "app_fee", "test_policy", "website"]].rename(columns={
+            "app_fee": "Application fee", "test_policy": "SAT/ACT policy",
             "name": "College", "city": "City", "state": "State", "fit": "Fit", "why": "Why",
             "net_cost": "Net price per year", "grad_rate": "Graduation rate", "admit_rate": "Admit rate",
             "earnings_10y": "Earnings after 10 years", "miles": "Miles from home", "website": "Website"})
@@ -363,9 +364,14 @@ with tab_col:
         for i, (_, r) in enumerate(show.head(30).iterrows()):
             with cols[i % 2]:
                 badge = f'<span class="pill" style="background:{FIT_COLORS[r["fit"]]}">{r["fit"].upper()}</span>'
+                fee = r.get("app_fee")
+                policy = r.get("test_policy")
                 tags = " · ".join(t for t in [
                     "Public" if r["control"] == 1 else "Private", f"{r['size']:,} undergrads",
-                    "HBCU" if r["hbcu"] else "", "Women's" if r["womens"] else ""] if t)
+                    "HBCU" if r["hbcu"] else "", "Women's" if r["womens"] else "",
+                    ("No application fee" if fee == 0 else f"${fee:,.0f} to apply") if pd.notna(fee) else "",
+                    {"Optional": "SAT/ACT optional", "Not considered": "SAT/ACT not used",
+                     "Required": "SAT/ACT required"}.get(policy, "") if isinstance(policy, str) else ""] if t)
                 strength = (f" · {r['major_share']:.0%} of degrees in your major"
                             if major and r.get("major_share", 0) > 0 else "")
                 st.markdown(f"""<div class="card">

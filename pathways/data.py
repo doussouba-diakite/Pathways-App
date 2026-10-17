@@ -10,7 +10,15 @@ DATA = ROOT / "data"
 
 
 def load_colleges(path: Path | None = None) -> pd.DataFrame:
-    return pd.read_csv(path or DATA / "colleges.csv")
+    """College Scorecard data, plus IPEDS application fees and SAT/ACT policy when they've been built."""
+    df = pd.read_csv(path or DATA / "colleges.csv")
+    adm = DATA / "admissions.csv"
+    if path is None and adm.exists():
+        df = df.merge(pd.read_csv(adm)[["unitid", "app_fee", "test_policy"]], on="unitid", how="left")
+    for c in ("app_fee", "test_policy"):
+        if c not in df.columns:
+            df[c] = pd.NA
+    return df
 
 
 def load_careers(path: Path | None = None) -> pd.DataFrame:

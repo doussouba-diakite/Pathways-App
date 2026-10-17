@@ -178,6 +178,8 @@ def run_tool(name: str, args: dict, p: Profile, colleges: pd.DataFrame, careers:
                 "act_middle_50": None if pd.isna(r["act_25"]) else f"{int(r['act_25'])}-{int(r['act_75'])}",
                 "grad_rate": None if pd.isna(r["grad_rate"]) else f"{r['grad_rate']:.0%}",
                 "median_earnings_10y": clean(r["earnings_10y"]),
+                "application_fee": clean(r.get("app_fee")),
+                "sat_act_policy": r.get("test_policy") if isinstance(r.get("test_policy"), str) else None,
                 "biggest_majors": [f"{m} ({v:.0%})" for m, v in majors]})
         return out
 
@@ -282,6 +284,8 @@ def school_facts(row, p: Profile) -> dict:
             "graduation_rate": num("grad_rate", "{:.0%}"), "admit_rate": num("admit_rate", "{:.0%}"),
             "median_earnings_10_years": num("earnings_10y", "${:,.0f}"),
             "miles_from_home": num("miles", "{:.0f}"),
+            "application_fee": num("app_fee", "${:,.0f}"),
+            "sat_act_policy": row.get("test_policy") if isinstance(row.get("test_policy"), str) else None,
             "share_of_degrees_in_your_major": num("major_share", "{:.0%}") if row.get("major_share") else None,
             "student": {"gpa": p.student.gpa, "intended_major": p.student.major or None,
                         "first_generation": p.first_gen,

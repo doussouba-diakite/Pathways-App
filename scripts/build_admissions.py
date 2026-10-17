@@ -38,12 +38,22 @@ def fetch(prefix: str) -> tuple[pd.DataFrame, str]:
     sys.exit(f"::error::no {prefix} file found")
 
 
+def col(df: pd.DataFrame, *names: str, contains: str = "") -> pd.Series:
+    """First matching column; reports what exists if none match."""
+    for n in names:
+        if n in df.columns:
+            return pd.to_numeric(df[n], errors="coerce")
+    near = [c for c in df.columns if contains and contains in c]
+    print(f"::warning::none of {names} found; similar columns: {near[:30]}")
+    return pd.Series(pd.NA, index=df.index, dtype="Float64")
+
+
 ic, ic_year = fetch("IC")
 adm, adm_year = fetch("ADM")
-fee = pd.to_numeric(ic.get("APPLFEEU"), errors="coerce")
+fee = col(ic, "APPLFEEU", "APPLFEEUG", "APPLFEE", contains="FEE")
 out = pd.DataFrame({"unitid": ic["UNITID"], "app_fee": fee.where(fee >= 0)})
 pol = pd.DataFrame({"unitid": adm["UNITID"],
-                    "test_policy": pd.to_numeric(adm.get("ADMCON7"), errors="coerce").map(TEST_POLICY)})
+                    "test_policy": col(adm, "ADMCON7", "ADMCON07", contains="ADMCON").map(TEST_POLICY)})
 out = out.merge(pol, on="unitid", how="outer")
 out["source_years"] = f"IC{ic_year}/ADM{adm_year}"
 OUT.parent.mkdir(exist_ok=True)
