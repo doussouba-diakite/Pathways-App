@@ -1,0 +1,31 @@
+name: Build admissions data
+
+# Downloads IPEDS application fees and SAT/ACT policies and commits data/admissions.csv.
+on:
+  push:
+    paths: ["scripts/build_admissions.py", ".github/workflows/build-admissions.yml"]
+  schedule:
+    - cron: "0 12 15 1 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pandas
+      - run: python scripts/build_admissions.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add data/admissions.csv
+          git diff --cached --quiet || git commit -m "Update admissions.csv from IPEDS"
+          git pull --rebase
+          git push
