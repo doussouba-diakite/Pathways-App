@@ -14,7 +14,11 @@ def load_colleges(path: Path | None = None) -> pd.DataFrame:
     df = pd.read_csv(path or DATA / "colleges.csv")
     adm = DATA / "admissions.csv"
     if path is None and adm.exists():
-        df = df.merge(pd.read_csv(adm)[["unitid", "app_fee", "test_policy"]], on="unitid", how="left")
+        extra = pd.read_csv(adm)
+        keep = ["unitid", "app_fee", "test_policy"] + [c for c in ("active", "closed_date") if c in extra.columns]
+        df = df.merge(extra[keep], on="unitid", how="left")
+        if "active" in df.columns:  # drop colleges the federal directory lists as closed
+            df = df[df["active"].map({False: False, "False": False}).fillna(True).astype(bool)]
     for c in ("app_fee", "test_policy"):
         if c not in df.columns:
             df[c] = pd.NA

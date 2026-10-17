@@ -57,6 +57,7 @@ import traceback  # noqa: E402
 try:
     ic, ic_year = fetch("IC", ("APPLFEEU", "APPLFEEUG", "APPLFEE"))
     adm, adm_year = fetch("ADM", ("ADMCON7", "ADMCON07"))
+    hd, hd_year = fetch("HD", ("CYACTIVE", "CLOSEDAT"))
 except SystemExit:
     raise
 except Exception:
@@ -67,8 +68,17 @@ out = pd.DataFrame({"unitid": ic["UNITID"], "app_fee": fee.where(fee >= 0)})
 pol = pd.DataFrame({"unitid": adm["UNITID"],
                     "test_policy": col(adm, "ADMCON7", "ADMCON07", contains="ADMCON").map(TEST_POLICY)})
 out = out.merge(pol, on="unitid", how="outer")
-out["source_years"] = f"IC{ic_year}/ADM{adm_year}"
+# Directory status: CYACTIVE 1 = active this year; CLOSEDAT holds a closing date, or -2 when not closed.
+closed = hd.get("CLOSEDAT", pd.Series("-2", index=hd.index)).astype(str).str.strip()
+active = pd.to_numeric(hd.get("CYACTIVE"), errors="coerce")
+status = pd.DataFrame({"unitid": hd["UNITID"],
+                       "active": ~((active == 2) | ~closed.isin(["-2", "", "nan", "-1"])),
+                       "closed_date": closed.where(~closed.isin(["-2", "", "nan", "-1"]))})
+out = out.merge(status, on="unitid", how="outer")
+out["source_years"] = f"IC{ic_year}/ADM{adm_year}/HD{hd_year}"
 OUT.parent.mkdir(exist_ok=True)
 out.to_csv(OUT, index=False)
 print(f"::warning::wrote {len(out)} rows; fee known for {out['app_fee'].notna().sum()}, "
-      f"test policy known for {out['test_policy'].notna().sum()}")
+      f"test policy known for {out['test_policy'].notna().sum()}, closed: {(~out['active'].fillna(True)).sum()}")
+wells = out[out["unitid"] == 197230]
+print(f"::warning::Wells College check: {wells.to_dict('records')}")
