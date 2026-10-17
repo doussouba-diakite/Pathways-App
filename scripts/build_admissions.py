@@ -33,7 +33,7 @@ def fetch(prefix: str, need: tuple[str, ...]) -> tuple[pd.DataFrame, str]:
             continue
         csvs = sorted((n for n in z.namelist() if n.lower().endswith(".csv")), key=lambda n: "_rv" not in n.lower())
         df = pd.read_csv(z.open(csvs[0]), encoding="latin-1", low_memory=False)
-        df.columns = [c.strip().upper().lstrip("\ufeff") for c in df.columns]
+        df.columns = [c.strip().upper().replace("Ï»¿", "").lstrip("\ufeff") for c in df.columns]
         if not any(n in df.columns for n in need):
             print(f"::warning::{prefix}{year} has no {need}; first columns: {list(df.columns)[:40]}")
             continue
