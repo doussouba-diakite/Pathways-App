@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from html import escape
 from urllib.parse import urlencode
 
@@ -337,9 +338,33 @@ with tab_col:
     if not ready:
         finish_profile()
     else:
-        if all_matches.empty:
-            st.warning("No colleges match these filters. Try adding states or widening your preferences.")
-        else:
+        if len(all_matches) < 5:
+            # Too few results: show how many each wider search would find, with one click to apply it.
+            def widen(states_, miles_):
+                st.session_state.states, st.session_state.miles = states_, miles_
+            options = []
+            if home:
+                for d in ["100 miles", "250 miles"]:
+                    if DISTANCES.index(d) > DISTANCES.index(how_far) or how_far == DISTANCES[0] or states:
+                        n_alt = len(match_colleges(colleges, replace(student, states=[], max_miles=float(d.split()[0])),
+                                                   income=income, n=0))
+                        if n_alt > len(all_matches):
+                            options.append((f"Within {d}, any state", n_alt, [], d))
+            n_us = len(match_colleges(colleges, replace(student, states=[], max_miles=None), income=income, n=0))
+            if n_us > len(all_matches):
+                options.append(("Anywhere in the U.S.", n_us, [], DISTANCES[0]))
+            msg = ("No colleges match these filters." if all_matches.empty else
+                   f"Only {len(all_matches)} college{'s' if len(all_matches) != 1 else ''} match"
+                   f"{'es' if len(all_matches) == 1 else ''} these filters.")
+            st.markdown(f'<div class="card"><h4>{msg}</h4><div class="muted">Some choices are rare: there are '
+                        f'only 30 women\'s colleges and about 100 HBCUs in the whole country. Widen your search:'
+                        f'</div></div>', unsafe_allow_html=True)
+            if options:
+                oc = st.columns(len(options))
+                for col, (label, n_alt, st_, mi) in zip(oc, options):
+                    col.button(f"{label} → {n_alt} schools", on_click=widen, args=(st_, mi), width="stretch",
+                               key=f"widen_{label}")
+        if not all_matches.empty:
             left, right = st.columns([1.35, 1])
             with left:
                 st.markdown("#### What you'd pay vs. how many students graduate")
@@ -356,6 +381,8 @@ with tab_col:
                                          "size": "Undergrads"})
                 fig.update_layout(height=430, margin=dict(l=0, r=0, t=10, b=0), legend_title_text="",
                                   legend=dict(orientation="h", y=1.08), xaxis_tickprefix="$", yaxis_ticksuffix="%",
+                                  xaxis_range=[0, max(60_000, float(plot["net_cost"].max() or 0) * 1.1)],
+                                  yaxis_range=[0, 105],
                                   plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
                 fig.update_traces(marker=dict(line=dict(width=1, color="white"), opacity=.85))
                 sel = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=("box", "lasso", "points"),
