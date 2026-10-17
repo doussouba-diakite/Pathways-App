@@ -170,3 +170,10 @@ def test_cuny_suny_rank_first_within_each_fit_group():
             assert grp["home_public"].tolist() == sorted(grp["home_public"].tolist(), reverse=True)
     assert set(df.loc[df["home_public"], "system"]) <= {"CUNY", "SUNY"}
     assert "United States Merchant Marine Academy" not in set(df.loc[df["home_public"], "name"])
+
+
+def test_undecided_students_get_major_ideas_that_resolve():
+    from pathways.majors import majors_for_interests
+    ideas = majors_for_interests(["S", "I"])
+    assert ideas[:2] == ["nursing", "biology"] and len(ideas) == len(set(ideas))
+    assert all(cip_families_for(m) for m in ideas)  # every suggestion maps to real major families

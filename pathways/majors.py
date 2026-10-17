@@ -145,3 +145,26 @@ def ai_families(text: str, api_key: str | None = None, client=None) -> list[str]
         messages=[{"role": "user", "content": f"Intended major: {text[:100]!r}\n\nFamilies:\n{menu}"}])
     picked = next(b.input for b in resp.content if b.type == "tool_use").get("families", [])
     return [c for c in picked if c in CIP_FAMILIES][:2]
+
+
+# Majors that line up with each interest type (Holland / RIASEC), for undecided students.
+# Every entry is a phrase in KEYWORDS, so clicking one runs the normal major matching.
+INTEREST_MAJORS = {
+    "R": ["engineering technology", "mechanical engineering", "construction", "environmental", "automotive"],
+    "I": ["biology", "computer science", "chemistry", "data science", "psychology"],
+    "A": ["graphic design", "film", "music", "english", "architecture"],
+    "S": ["nursing", "education", "social work", "psychology", "public health"],
+    "E": ["business", "marketing", "political science", "pre-law", "entrepreneurship"],
+    "C": ["accounting", "finance", "information systems", "data analytics", "paralegal"],
+}
+
+
+def majors_for_interests(top_letters: list[str], k: int = 6) -> list[str]:
+    """Interleave suggestions from the student's top interest types, no repeats."""
+    lists = [INTEREST_MAJORS[L] for L in top_letters if L in INTEREST_MAJORS]
+    out = []
+    for i in range(max((len(x) for x in lists), default=0)):
+        for x in lists:
+            if i < len(x) and x[i] not in out:
+                out.append(x[i])
+    return out[:k]

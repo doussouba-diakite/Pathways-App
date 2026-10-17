@@ -16,7 +16,7 @@ from pathways.careers import LETTERS, NAMES, PLAIN, QUIZ, career_vector, match_c
 from pathways.colleges import FIT_ORDER, Student, income_bracket, match_colleges
 from pathways.data import careers_are_sample, load_careers, load_colleges
 from pathways.distance import zip_location
-from pathways.majors import CIP_FAMILIES, ai_families, cip_families_for, suggest_spelling
+from pathways.majors import CIP_FAMILIES, ai_families, cip_families_for, majors_for_interests, suggest_spelling
 from pathways.report import build_pdf
 
 st.set_page_config(page_title="Pathways", page_icon="🧭", layout="wide")
@@ -49,6 +49,7 @@ st.markdown("""
        margin: 0 6px 6px 0; background: rgba(108,92,231,.14); color: #6c5ce7;}
 .check {font-size: .8rem; margin-top: 4px;}
 .hero {padding-bottom: 118px;}
+.st-key-herostats_off {margin-top: -100px; padding: 0 32px 40px; position: relative; z-index: 2;}
 .st-key-herostats {margin-top: -122px; padding: 0 32px 18px; position: relative; z-index: 2;}
 .st-key-herostats button {background: rgba(255,255,255,.16) !important; border: 1px solid rgba(255,255,255,.28) !important;
        border-radius: 14px !important; color: white !important; min-height: 76px; justify-content: flex-start;
@@ -106,6 +107,8 @@ if "restored" not in st.session_state:
                 st.session_state[k] = cast(st.query_params[k])
             except ValueError:
                 pass
+    if st.session_state.get("major"):
+        st.session_state.major_mode = "I know my major"
     for k, v in {"states": ["NY"], "years": "4-year", "control": "Any", "fitf": "All", "gpa": 3.3, "n": 15}.items():
         st.session_state.setdefault(k, v)
 
@@ -116,10 +119,15 @@ with st.sidebar:
     st.markdown("## 🧭 Your profile")
     name = st.text_input("First name (optional)", placeholder="Taty")
     gpa = st.slider("Unweighted GPA", 1.5, 4.0, step=0.05, key="gpa")
-    test = st.segmented_control("Test scores", ["None", "SAT", "ACT"], default="None")
+    test = st.segmented_control("SAT / ACT ✱", ["Not taken", "SAT", "ACT"], key="test",
+                                help="Haven't taken one? That's fine: many schools are test-optional.")
     sat = st.slider("SAT total", 400, 1600, 1150, 10) if test == "SAT" else None
     act = st.slider("ACT composite", 1, 36, 24) if test == "ACT" else None
-    major = st.text_input("Intended major", placeholder="computer science, nursing, business…", key="major")
+    major_mode = st.segmented_control("Major ✱", ["I know my major", "Undecided"], key="major_mode")
+    major = (st.text_input("Intended major", placeholder="computer science, nursing, business…", key="major",
+                           label_visibility="collapsed") if major_mode == "I know my major" else "")
+    if major_mode == "Undecided":
+        st.caption("No problem. Take the 2-minute interest quiz in **🧭 Careers** and we'll suggest majors that fit you.")
     fams, by_ai = cip_families_for(major), False
     key_now = api_key() or st.session_state.get("user_key")
     if major and not fams and key_now:
@@ -138,7 +146,7 @@ with st.sidebar:
 
     with st.expander("📍 Distance from home", expanded=True):
         c1, c2 = st.columns([1, 1.4])
-        zip_code = c1.text_input("Home ZIP", placeholder="11201", max_chars=5, key="zip")
+        zip_code = c1.text_input("Home ZIP ✱", placeholder="11201", max_chars=5, key="zip")
         how_far = c2.selectbox("Within", DISTANCES, key="miles")
         home = zip_location(zip_code)
         if zip_code and not home:
@@ -168,9 +176,16 @@ with st.sidebar:
                                   "every school; all of them admit women.")
 
     with st.expander("💸 Money", expanded=True):
-        income = st.slider("Household income ($/yr)", 0, 200_000, 45_000, 1_000, format="$%d")
-        household = st.number_input("People in household", 1, 12, 4)
-        status = st.selectbox("Citizenship / status", ["Citizen or permanent resident", "DACA", "Undocumented", "Other"])
+        income = st.number_input("Household income per year ✱", min_value=0, max_value=2_000_000, value=None,
+                                 step=1_000, placeholder="e.g. 45000", key="income",
+                                 help="Total yearly income of the people you live with. Used only on this page "
+                                      "to estimate your price and aid; never saved or shared.")
+        household = st.number_input("People in household ✱", min_value=1, max_value=15, value=None,
+                                    placeholder="e.g. 4", key="household")
+        status = st.selectbox("Citizenship / status ✱", ["Citizen or permanent resident", "DACA", "Undocumented",
+                                                       "Other", "Prefer not to say"], index=None,
+                              placeholder="Choose one", key="status",
+                              help="Decides which aid you can get. Never saved or shared.")
         ny = st.checkbox("New York resident", value=True)
         first_gen = st.checkbox("First in family to go to college")
         budget = st.slider("Max I can pay per year after aid", 0, 60_000, 60_000, 1_000, format="$%d",
@@ -179,6 +194,31 @@ with st.sidebar:
     if not api_key():
         st.text_input("✨ Anthropic API key (for the AI advisor)", type="password", key="user_key",
                       help="Used for this session only, never stored.")
+
+# ── Required answers: results only show once the profile is complete ────────
+REQUIRED = {"SAT / ACT (or Not taken)": test is not None,
+            "Major (or Undecided)": major_mode == "Undecided" or bool(major_mode and (major or "").strip()),
+            "Home ZIP code": home is not None,
+            "Household income": income is not None,
+            "People in household": household is not None,
+            "Citizenship / status": status is not None}
+missing = [k for k, ok in REQUIRED.items() if not ok]
+ready = not missing
+income = income if income is not None else 45_000           # placeholders until answered; nothing shows yet
+household = household if household is not None else 4
+aid_status = "Citizen or permanent resident" if status in (None, "Prefer not to say") else status
+status = aid_status
+
+
+def finish_profile():
+    done = len(REQUIRED) - len(missing)
+    st.markdown(f"""<div class="card"><h4>Finish your profile to see your matches ({done}/{len(REQUIRED)})</h4>
+        <div class="muted">The more accurate your answers, the more accurate your matches. Still needed:</div>
+        <div style="margin-top:8px">{"".join(f'<span class="tool">✱ {m}</span>' for m in missing)}</div>
+        <div class="muted" style="margin-top:8px">Everything is in the sidebar on the left. Income and status are
+        used only on this page, never saved or shared.</div></div>""", unsafe_allow_html=True)
+    st.progress(done / len(REQUIRED))
+
 
 student = Student(gpa=gpa, sat=sat, act=act, states=states, size=size, control=control or "Any",
                   years=years or "4-year", hbcu_only=hbcu, womens_only=womens, major=major,
@@ -219,16 +259,20 @@ def go_to(tab: str, fit: str | None = None):
 
 
 n_safe = int((all_matches["fit"] == "Safety").sum()) if len(all_matches) else 0
-with st.container(key="herostats"):
-    c = st.columns(4)
-    c[0].button(f"**{len(all_matches):,}**\n\ncolleges fit your filters →", on_click=go_to, args=(TABS[1], "All"),
-                width="stretch", key="hs_all")
-    c[1].button(f"**{n_safe}**\n\nlikely admits (Safety) →", on_click=go_to, args=(TABS[1], "Safety"),
-                width="stretch", key="hs_safe")
-    c[2].button(f"**{money(aid.total)}**\n\nest. Pell + TAP per year →", on_click=go_to, args=(TABS[3],),
-                width="stretch", key="hs_aid")
-    c[3].button(f"**{code}**\n\nyour interest code →", on_click=go_to, args=(TABS[2],),
-                width="stretch", key="hs_code")
+with st.container(key="herostats" if ready else "herostats_off"):
+    if not ready:
+        st.markdown(f'<div style="color:white;opacity:.9">✱ Answer {len(missing)} more question'
+                    f'{"s" if len(missing) != 1 else ""} in the sidebar to see your matches.</div>', unsafe_allow_html=True)
+    else:
+        c = st.columns(4)
+        c[0].button(f"**{len(all_matches):,}**\n\ncolleges fit your filters →", on_click=go_to, args=(TABS[1], "All"),
+                    width="stretch", key="hs_all")
+        c[1].button(f"**{n_safe}**\n\nlikely admits (Safety) →", on_click=go_to, args=(TABS[1], "Safety"),
+                    width="stretch", key="hs_safe")
+        c[2].button(f"**{money(aid.total)}**\n\nest. Pell + TAP per year →", on_click=go_to, args=(TABS[3],),
+                    width="stretch", key="hs_aid")
+        c[3].button(f"**{code}**\n\nyour interest code →", on_click=go_to, args=(TABS[2],),
+                    width="stretch", key="hs_code")
 
 tab_ai, tab_col, tab_car, tab_aid, tab_map, tab_list = st.tabs(TABS, key="nav", on_change="rerun")
 
@@ -285,138 +329,141 @@ with tab_ai:
 
 # ── Colleges ─────────────────────────────────────────────────────────────────
 with tab_col:
-    if all_matches.empty:
-        st.warning("No colleges match these filters. Try adding states or widening your preferences.")
+    if not ready:
+        finish_profile()
     else:
-        left, right = st.columns([1.35, 1])
-        with left:
-            st.markdown("#### What you'd pay vs. how many students graduate")
-            st.caption("Each bubble is a college that fits your filters. Up and left = more value. "
-                       "Drag a box around bubbles to inspect them.")
-            plot = all_matches.dropna(subset=["net_cost", "grad_rate"]).query("grad_rate > 0").copy()
-            plot["Graduation rate"] = plot["grad_rate"] * 100
-            fig = px.scatter(plot, x="net_cost", y="Graduation rate", color="fit", size="size", size_max=38,
-                             color_discrete_map=FIT_COLORS, hover_name="name", custom_data=["unitid"],
-                             category_orders={"fit": list(FIT_ORDER)},
-                             hover_data={"net_cost": ":$,.0f", "Graduation rate": ":.0f", "size": ":,",
-                                         "fit": False},
-                             labels={"net_cost": f"Avg. net price for families earning {income_bracket(income).replace('_', '-').replace('k', 'k')}",
-                                     "size": "Undergrads"})
-            fig.update_layout(height=430, margin=dict(l=0, r=0, t=10, b=0), legend_title_text="",
-                              legend=dict(orientation="h", y=1.08), xaxis_tickprefix="$", yaxis_ticksuffix="%",
-                              plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-            fig.update_traces(marker=dict(line=dict(width=1, color="white"), opacity=.85))
-            sel = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=("box", "lasso", "points"),
-                                  key="scatter")
-        with right:
-            st.markdown("#### Your list balance")
-            mix = picks["fit"].value_counts().reindex(list(FIT_ORDER)).dropna()
-            donut = go.Figure(go.Pie(labels=mix.index, values=mix.values, hole=.62,
-                                     marker_colors=[FIT_COLORS[f] for f in mix.index], sort=False))
-            donut.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=True,
-                                annotations=[dict(text=f"<b>{len(picks)}</b><br>picks", showarrow=False, font_size=16)])
-            st.plotly_chart(donut, width="stretch")
-            st.markdown(f"""<div class="muted">Counselors suggest a mix: a few safeties you'd be happy at,
-            several matches, and some reaches. Your top {len(picks)} picks below are balanced that way and
-            ranked by program strength in your major, graduation rate, then price.</div>""", unsafe_allow_html=True)
-
-        chosen_ids = [p["customdata"][0] for p in (sel.selection.points if sel and sel.selection else [])]
-        fit_filter = st.session_state.get("fitf") or "All"
-        if chosen_ids:
-            show, title = all_matches[all_matches["unitid"].isin(chosen_ids)], f"Selected on the chart"
-        elif fit_filter != "All":  # a single fit: show every matching school of that kind, not just the picks
-            show, title = all_matches[all_matches["fit"] == fit_filter].head(n_show), f"Your {fit_filter} schools"
+        if all_matches.empty:
+            st.warning("No colleges match these filters. Try adding states or widening your preferences.")
         else:
-            show, title = picks, "Your balanced list"
+            left, right = st.columns([1.35, 1])
+            with left:
+                st.markdown("#### What you'd pay vs. how many students graduate")
+                st.caption("Each bubble is a college that fits your filters. Up and left = more value. "
+                           "Drag a box around bubbles to inspect them.")
+                plot = all_matches.dropna(subset=["net_cost", "grad_rate"]).query("grad_rate > 0").copy()
+                plot["Graduation rate"] = plot["grad_rate"] * 100
+                fig = px.scatter(plot, x="net_cost", y="Graduation rate", color="fit", size="size", size_max=38,
+                                 color_discrete_map=FIT_COLORS, hover_name="name", custom_data=["unitid"],
+                                 category_orders={"fit": list(FIT_ORDER)},
+                                 hover_data={"net_cost": ":$,.0f", "Graduation rate": ":.0f", "size": ":,",
+                                             "fit": False},
+                                 labels={"net_cost": f"Avg. net price for families earning {income_bracket(income).replace('_', '-').replace('k', 'k')}",
+                                         "size": "Undergrads"})
+                fig.update_layout(height=430, margin=dict(l=0, r=0, t=10, b=0), legend_title_text="",
+                                  legend=dict(orientation="h", y=1.08), xaxis_tickprefix="$", yaxis_ticksuffix="%",
+                                  plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                fig.update_traces(marker=dict(line=dict(width=1, color="white"), opacity=.85))
+                sel = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode=("box", "lasso", "points"),
+                                      key="scatter")
+            with right:
+                st.markdown("#### Your list balance")
+                mix = picks["fit"].value_counts().reindex(list(FIT_ORDER)).dropna()
+                donut = go.Figure(go.Pie(labels=mix.index, values=mix.values, hole=.62,
+                                         marker_colors=[FIT_COLORS[f] for f in mix.index], sort=False))
+                donut.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=True,
+                                    annotations=[dict(text=f"<b>{len(picks)}</b><br>picks", showarrow=False, font_size=16)])
+                st.plotly_chart(donut, width="stretch")
+                st.markdown(f"""<div class="muted">Counselors suggest a mix: a few safeties you'd be happy at,
+                several matches, and some reaches. Your top {len(picks)} picks below are balanced that way and
+                ranked by program strength in your major, graduation rate, then price.</div>""", unsafe_allow_html=True)
 
-        st.markdown(f"### {title} ({len(show)})")
-        st.caption("Application fees and SAT/ACT policies are from federal IPEDS data (2023). Policies change, so "
-                   "confirm on each school's website. Many schools waive the fee if you qualify for Pell or "
-                   "use a Common App fee waiver.")
-        f1, f2 = st.columns([1.2, 1])
-        f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], key="fitf")
-        sorts = ["Best match", "Cheapest", "Highest graduation"] + (["Closest"] if home else [])
-        order = f2.selectbox("Sort by", sorts, key="sortby")
-        by = {"Cheapest": ("net_cost", True), "Highest graduation": ("grad_rate", False),
-              "Closest": ("miles", True)}.get(order)
-        if by:
-            show = show.sort_values(by[0], ascending=by[1], na_position="last")
+            chosen_ids = [p["customdata"][0] for p in (sel.selection.points if sel and sel.selection else [])]
+            fit_filter = st.session_state.get("fitf") or "All"
+            if chosen_ids:
+                show, title = all_matches[all_matches["unitid"].isin(chosen_ids)], f"Selected on the chart"
+            elif fit_filter != "All":  # a single fit: show every matching school of that kind, not just the picks
+                show, title = all_matches[all_matches["fit"] == fit_filter].head(n_show), f"Your {fit_filter} schools"
+            else:
+                show, title = picks, "Your balanced list"
 
-        # Take your matches with you: spreadsheet, PDF, or a link
-        export = show[["name", "city", "state", "fit", "why", "net_cost", "grad_rate", "admit_rate",
-                       "earnings_10y", "miles", "app_fee", "test_policy", "website"]].rename(columns={
-            "app_fee": "Application fee", "test_policy": "SAT/ACT policy",
-            "name": "College", "city": "City", "state": "State", "fit": "Fit", "why": "Why",
-            "net_cost": "Net price per year", "grad_rate": "Graduation rate", "admit_rate": "Admit rate",
-            "earnings_10y": "Earnings after 10 years", "miles": "Miles from home", "website": "Website"})
-        if not home:
-            export = export.drop(columns="Miles from home")
-        d1, d2, d3 = st.columns(3)
-        d1.download_button("⬇️ Spreadsheet (CSV)", export.to_csv(index=False).encode(), "my_college_matches.csv",
-                           "text/csv", width="stretch")
-        d2.download_button("⬇️ PDF report", build_pdf(show, careers if not careers.empty else pd.DataFrame(
-            columns=["title", "match", "preparation", "why"]), aid, name), "my_college_matches.pdf",
-                           "application/pdf", width="stretch")
-        with d3.popover("🔗 Share", width="stretch"):
-            params = {"gpa": gpa, "n": n_show, "years": years or "4-year", "control": control or "Any"}
-            if major:
-                params["major"] = major
-            if home and how_far != DISTANCES[0]:
-                params |= {"zip": zip_code, "miles": how_far}
-            params["states"] = ",".join(states)
-            base = (st.context.url or "").split("?")[0]
-            st.caption("Anyone with this link sees the same search. Your income, status, and name are not included.")
-            st.code(f"{base}?{urlencode(params)}", language=None, wrap_lines=True)
+            st.markdown(f"### {title} ({len(show)})")
+            st.caption("Application fees and SAT/ACT policies are from federal IPEDS data (2023). Policies change, so "
+                       "confirm on each school's website. Many schools waive the fee if you qualify for Pell or "
+                       "use a Common App fee waiver.")
+            f1, f2 = st.columns([1.2, 1])
+            f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], key="fitf")
+            sorts = ["Best match", "Cheapest", "Highest graduation"] + (["Closest"] if home else [])
+            order = f2.selectbox("Sort by", sorts, key="sortby")
+            by = {"Cheapest": ("net_cost", True), "Highest graduation": ("grad_rate", False),
+                  "Closest": ("miles", True)}.get(order)
+            if by:
+                show = show.sort_values(by[0], ascending=by[1], na_position="last")
 
-        cols = st.columns(2)
-        for i, (_, r) in enumerate(show.head(30).iterrows()):
-            with cols[i % 2]:
-                badge = f'<span class="pill" style="background:{FIT_COLORS[r["fit"]]}">{r["fit"].upper()}</span>'
-                if r.get("system"):
-                    badge += f'<span class="pill" style="background:{"#1d4ed8" if r["system"] == "CUNY" else "#0f766e"}">{r["system"]}</span>'
-                fee = r.get("app_fee")
-                policy = r.get("test_policy")
-                tags = " · ".join(t for t in [
-                    "Public" if r["control"] == 1 else "Private", f"{r['size']:,} undergrads",
-                    "HBCU" if r["hbcu"] else "", "Women's" if r["womens"] else "",
-                    ("No application fee" if fee == 0 else f"${fee:,.0f} to apply") if pd.notna(fee) else "",
-                    {"Optional": "SAT/ACT optional", "Not considered": "SAT/ACT not used",
-                     "Required": "SAT/ACT required"}.get(policy, "") if isinstance(policy, str) else ""] if t)
-                strength = (f" · {r['major_share']:.0%} of degrees in your major"
-                            if major and r.get("major_share", 0) > 0 else "")
-                st.markdown(f"""<div class="card">
-                    {badge}<span class="muted">{r['city']}, {r['state']}{f" · 📍 {r['miles']:.0f} mi" if pd.notna(r.get('miles')) else ""}</span>
-                    <h4>{r['name']}</h4><div class="muted">{tags}{strength}</div>
-                    <div style="display:flex;gap:26px;margin-top:10px">
-                      <div><div class="kpi">{money(r['net_cost'])}</div><div class="muted">net price / yr</div></div>
-                      <div><div class="kpi">{pct(r['grad_rate'])}</div><div class="muted">graduate</div></div>
-                      <div><div class="kpi">{pct(r['admit_rate'])}</div><div class="muted">admitted</div></div>
-                      <div><div class="kpi">{money(r['earnings_10y'])}</div><div class="muted">earnings, 10 yrs</div></div>
-                    </div>
-                    <div class="why">{r['why']}</div></div>""", unsafe_allow_html=True)
-                uid = r["unitid"]
-                why_ai = st.session_state.setdefault("why_ai", {})
-                if uid in why_ai:
-                    txt, bad = why_ai[uid]
-                    st.markdown(f'<div class="card" style="border-color:rgba(108,92,231,.45)">'
-                                f'<b>✨ Why this school, for you</b><br>{escape(txt)}<div class="check">'
-                                + (f"⚠️ <b>Double-check:</b> {escape(', '.join(bad))} didn't come from the data."
-                                   if bad else "✅ <b>Fact-checked</b> against this school's data.")
-                                + "</div></div>", unsafe_allow_html=True)
-                b1, b2 = st.columns(2)
-                saved = uid in st.session_state.saved
-                if b1.button("✓ Saved" if saved else "☆ Save", key=f"save_{uid}", disabled=saved, width="stretch"):
-                    st.session_state.saved[uid] = r.to_dict()
-                    st.rerun()
-                if b2.button("✨ Why this school?", key=f"why_{uid}", width="stretch", disabled=not KEY or uid in why_ai,
-                             help=None if KEY else "Add an API key in the sidebar to use this."):
-                    with st.spinner("Thinking about this school for you…"):
-                        try:
-                            txt, g = why_school(r, prof, api_key=KEY)
-                            why_ai[uid] = (txt, [c.text for c in g.unverified])
-                        except Exception as e:
-                            st.error(f"Couldn't reach the AI: {e}")
-                    st.rerun()
+            # Take your matches with you: spreadsheet, PDF, or a link
+            export = show[["name", "city", "state", "fit", "why", "net_cost", "grad_rate", "admit_rate",
+                           "earnings_10y", "miles", "app_fee", "test_policy", "website"]].rename(columns={
+                "app_fee": "Application fee", "test_policy": "SAT/ACT policy",
+                "name": "College", "city": "City", "state": "State", "fit": "Fit", "why": "Why",
+                "net_cost": "Net price per year", "grad_rate": "Graduation rate", "admit_rate": "Admit rate",
+                "earnings_10y": "Earnings after 10 years", "miles": "Miles from home", "website": "Website"})
+            if not home:
+                export = export.drop(columns="Miles from home")
+            d1, d2, d3 = st.columns(3)
+            d1.download_button("⬇️ Spreadsheet (CSV)", export.to_csv(index=False).encode(), "my_college_matches.csv",
+                               "text/csv", width="stretch")
+            d2.download_button("⬇️ PDF report", build_pdf(show, careers if not careers.empty else pd.DataFrame(
+                columns=["title", "match", "preparation", "why"]), aid, name), "my_college_matches.pdf",
+                               "application/pdf", width="stretch")
+            with d3.popover("🔗 Share", width="stretch"):
+                params = {"gpa": gpa, "n": n_show, "years": years or "4-year", "control": control or "Any"}
+                if major:
+                    params["major"] = major
+                if home and how_far != DISTANCES[0]:
+                    params |= {"zip": zip_code, "miles": how_far}
+                params["states"] = ",".join(states)
+                base = (st.context.url or "").split("?")[0]
+                st.caption("Anyone with this link sees the same search. Your income, status, and name are not included.")
+                st.code(f"{base}?{urlencode(params)}", language=None, wrap_lines=True)
+
+            cols = st.columns(2)
+            for i, (_, r) in enumerate(show.head(30).iterrows()):
+                with cols[i % 2]:
+                    badge = f'<span class="pill" style="background:{FIT_COLORS[r["fit"]]}">{r["fit"].upper()}</span>'
+                    if r.get("system"):
+                        badge += f'<span class="pill" style="background:{"#1d4ed8" if r["system"] == "CUNY" else "#0f766e"}">{r["system"]}</span>'
+                    fee = r.get("app_fee")
+                    policy = r.get("test_policy")
+                    tags = " · ".join(t for t in [
+                        "Public" if r["control"] == 1 else "Private", f"{r['size']:,} undergrads",
+                        "HBCU" if r["hbcu"] else "", "Women's" if r["womens"] else "",
+                        ("No application fee" if fee == 0 else f"${fee:,.0f} to apply") if pd.notna(fee) else "",
+                        {"Optional": "SAT/ACT optional", "Not considered": "SAT/ACT not used",
+                         "Required": "SAT/ACT required"}.get(policy, "") if isinstance(policy, str) else ""] if t)
+                    strength = (f" · {r['major_share']:.0%} of degrees in your major"
+                                if major and r.get("major_share", 0) > 0 else "")
+                    st.markdown(f"""<div class="card">
+                        {badge}<span class="muted">{r['city']}, {r['state']}{f" · 📍 {r['miles']:.0f} mi" if pd.notna(r.get('miles')) else ""}</span>
+                        <h4>{r['name']}</h4><div class="muted">{tags}{strength}</div>
+                        <div style="display:flex;gap:26px;margin-top:10px">
+                          <div><div class="kpi">{money(r['net_cost'])}</div><div class="muted">net price / yr</div></div>
+                          <div><div class="kpi">{pct(r['grad_rate'])}</div><div class="muted">graduate</div></div>
+                          <div><div class="kpi">{pct(r['admit_rate'])}</div><div class="muted">admitted</div></div>
+                          <div><div class="kpi">{money(r['earnings_10y'])}</div><div class="muted">earnings, 10 yrs</div></div>
+                        </div>
+                        <div class="why">{r['why']}</div></div>""", unsafe_allow_html=True)
+                    uid = r["unitid"]
+                    why_ai = st.session_state.setdefault("why_ai", {})
+                    if uid in why_ai:
+                        txt, bad = why_ai[uid]
+                        st.markdown(f'<div class="card" style="border-color:rgba(108,92,231,.45)">'
+                                    f'<b>✨ Why this school, for you</b><br>{escape(txt)}<div class="check">'
+                                    + (f"⚠️ <b>Double-check:</b> {escape(', '.join(bad))} didn't come from the data."
+                                       if bad else "✅ <b>Fact-checked</b> against this school's data.")
+                                    + "</div></div>", unsafe_allow_html=True)
+                    b1, b2 = st.columns(2)
+                    saved = uid in st.session_state.saved
+                    if b1.button("✓ Saved" if saved else "☆ Save", key=f"save_{uid}", disabled=saved, width="stretch"):
+                        st.session_state.saved[uid] = r.to_dict()
+                        st.rerun()
+                    if b2.button("✨ Why this school?", key=f"why_{uid}", width="stretch", disabled=not KEY or uid in why_ai,
+                                 help=None if KEY else "Add an API key in the sidebar to use this."):
+                        with st.spinner("Thinking about this school for you…"):
+                            try:
+                                txt, g = why_school(r, prof, api_key=KEY)
+                                why_ai[uid] = (txt, [c.text for c in g.unverified])
+                            except Exception as e:
+                                st.error(f"Couldn't reach the AI: {e}")
+                        st.rerun()
 
 # ── Careers ──────────────────────────────────────────────────────────────────
 with tab_car:
@@ -429,6 +476,19 @@ with tab_car:
     st.progress(len(answered) / 6)
     for i, (q, opts) in enumerate(QUIZ.items()):
         st.pills(q, list(opts), key=f"quiz_{i}")
+
+    def pick_major(m: str):
+        st.session_state.major_mode, st.session_state.major = "I know my major", m
+        st.session_state.nav = TABS[1]
+
+    if answered:
+        ideas = majors_for_interests(top_letters(profile, 2))
+        st.markdown("#### 🎓 Majors that fit your interests")
+        st.caption(("You said you're undecided, so start here. " if major_mode == "Undecided" else "")
+                   + "Click one to search colleges that are strong in it. You can always change it in the sidebar.")
+        mc = st.columns(3)
+        for j, m in enumerate(ideas):
+            mc[j % 3].button(m.title(), key=f"mj_{j}", on_click=pick_major, args=(m,), width="stretch")
     r_col, txt_col = st.columns([1.3, 1])
     with r_col:
         st.markdown("#### Your interest shape")
@@ -476,116 +536,129 @@ with tab_car:
 
 # ── Aid ──────────────────────────────────────────────────────────────────────
 with tab_aid:
-    a1, a2 = st.columns([1, 1.3])
-    with a1:
-        st.markdown("#### Grants you may get (estimates)")
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Pell Grant", money(aid.pell))
-        k2.metric("NY TAP", money(aid.tap))
-        k3.metric("Total / yr", money(aid.total))
-        flags = []
-        if aid.dream_act:
-            flags.append("🟢 NYS Dream Act")
-        if aid.opportunity_programs:
-            flags.append("🟢 HEOP / EOP / SEEK")
-        if flags:
-            st.markdown(" &nbsp; ".join(flags))
-        for n in aid.notes:
-            st.markdown(f"- {n}")
-        st.caption("Estimates for planning. Your real award comes from the FAFSA or the Dream Act application.")
-    with a2:
-        st.markdown("#### What families like yours actually pay")
-        if all_matches.empty:
-            st.caption("Pick some filters to compare schools.")
-        else:
-            opts = all_matches.dropna(subset=["net_price_0_30k"])
-            order = list(dict.fromkeys([n for n in picks["name"] if n in set(opts["name"])] + sorted(opts["name"])))
-            school = st.selectbox("School", order)
-            row = opts[opts["name"] == school].iloc[0]
-            labels = {"0_30k": "$0-30k", "30_48k": "$30-48k", "48_75k": "$48-75k", "75_110k": "$75-110k",
-                      "110k_plus": "$110k+"}
-            data = pd.DataFrame({"Family income": list(labels.values()),
-                                 "Net price": [row[f"net_price_{k}"] for k in labels]})
-            mine = labels[income_bracket(income)]
-            bars = px.bar(data, x="Family income", y="Net price", text_auto="$,.0f")
-            bars.update_traces(marker_color=["#6c5ce7" if x == mine else "rgba(108,92,231,.3)"
-                                             for x in data["Family income"]])
-            sticker = row["sticker"]
-            if pd.notna(sticker):
-                bars.add_hline(y=sticker, line_dash="dot", annotation_text=f"Sticker price {money(sticker)}")
-            bars.update_layout(height=340, margin=dict(l=0, r=0, t=20, b=0), yaxis_tickprefix="$",
-                               plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(bars, width="stretch")
-            st.caption("Average price after grants, from the U.S. College Scorecard. Your bracket is highlighted.")
+    if not ready:
+        finish_profile()
+    else:
+        if st.session_state.get("status") == "Prefer not to say":
+            st.info("You chose not to share your status, so these estimates assume you're a U.S. citizen or "
+                    "permanent resident. If you're DACA or undocumented in New York, the NYS Dream Act can still "
+                    "help: choose that option in the sidebar to see it (it's never saved or shared).")
+        a1, a2 = st.columns([1, 1.3])
+        with a1:
+            st.markdown("#### Grants you may get (estimates)")
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Pell Grant", money(aid.pell))
+            k2.metric("NY TAP", money(aid.tap))
+            k3.metric("Total / yr", money(aid.total))
+            flags = []
+            if aid.dream_act:
+                flags.append("🟢 NYS Dream Act")
+            if aid.opportunity_programs:
+                flags.append("🟢 HEOP / EOP / SEEK")
+            if flags:
+                st.markdown(" &nbsp; ".join(flags))
+            for n in aid.notes:
+                st.markdown(f"- {n}")
+            st.caption("Estimates for planning. Your real award comes from the FAFSA or the Dream Act application.")
+        with a2:
+            st.markdown("#### What families like yours actually pay")
+            if all_matches.empty:
+                st.caption("Pick some filters to compare schools.")
+            else:
+                opts = all_matches.dropna(subset=["net_price_0_30k"])
+                order = list(dict.fromkeys([n for n in picks["name"] if n in set(opts["name"])] + sorted(opts["name"])))
+                school = st.selectbox("School", order)
+                row = opts[opts["name"] == school].iloc[0]
+                labels = {"0_30k": "$0-30k", "30_48k": "$30-48k", "48_75k": "$48-75k", "75_110k": "$75-110k",
+                          "110k_plus": "$110k+"}
+                data = pd.DataFrame({"Family income": list(labels.values()),
+                                     "Net price": [row[f"net_price_{k}"] for k in labels]})
+                mine = labels[income_bracket(income)]
+                bars = px.bar(data, x="Family income", y="Net price", text_auto="$,.0f")
+                bars.update_traces(marker_color=["#6c5ce7" if x == mine else "rgba(108,92,231,.3)"
+                                                 for x in data["Family income"]])
+                sticker = row["sticker"]
+                if pd.notna(sticker):
+                    bars.add_hline(y=sticker, line_dash="dot", annotation_text=f"Sticker price {money(sticker)}")
+                bars.update_layout(height=340, margin=dict(l=0, r=0, t=20, b=0), yaxis_tickprefix="$",
+                                   plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(bars, width="stretch")
+                st.caption("Average price after grants, from the U.S. College Scorecard. Your bracket is highlighted.")
 
 # ── Map ──────────────────────────────────────────────────────────────────────
 with tab_map:
-    pts = all_matches.dropna(subset=["lat", "lon"])
-    if pts.empty:
-        st.caption("No mappable schools for these filters.")
+    if not ready:
+        finish_profile()
     else:
-        m = px.scatter_geo(pts, lat="lat", lon="lon", color="fit", color_discrete_map=FIT_COLORS,
-                           hover_name="name", size="size", size_max=24, scope="usa",
-                           hover_data={"net_cost": ":$,.0f", "lat": False, "lon": False, "size": ":,"},
-                           category_orders={"fit": list(FIT_ORDER)})
-        m.update_geos(fitbounds="locations" if states else False, showland=True, landcolor="#f4f3ff",
-                      showlakes=True, lakecolor="#dfe6fd", showsubunits=True, subunitcolor="#c8c6e8",
-                      bgcolor="rgba(0,0,0,0)")
-        m.update_traces(marker=dict(line=dict(width=.6, color="white"), opacity=.85))
-        m.update_layout(height=620, margin=dict(l=0, r=0, t=0, b=0), legend_title_text="",
-                        legend=dict(orientation="h", y=1.02), paper_bgcolor="rgba(0,0,0,0)")
-        st.caption("Every college that fits your filters. Hover for net price; click the legend to hide a group.")
-        st.plotly_chart(m, width="stretch")
+        pts = all_matches.dropna(subset=["lat", "lon"])
+        if pts.empty:
+            st.caption("No mappable schools for these filters.")
+        else:
+            m = px.scatter_geo(pts, lat="lat", lon="lon", color="fit", color_discrete_map=FIT_COLORS,
+                               hover_name="name", size="size", size_max=24, scope="usa",
+                               hover_data={"net_cost": ":$,.0f", "lat": False, "lon": False, "size": ":,"},
+                               category_orders={"fit": list(FIT_ORDER)})
+            m.update_geos(fitbounds="locations" if states else False, showland=True, landcolor="#f4f3ff",
+                          showlakes=True, lakecolor="#dfe6fd", showsubunits=True, subunitcolor="#c8c6e8",
+                          bgcolor="rgba(0,0,0,0)")
+            m.update_traces(marker=dict(line=dict(width=.6, color="white"), opacity=.85))
+            m.update_layout(height=620, margin=dict(l=0, r=0, t=0, b=0), legend_title_text="",
+                            legend=dict(orientation="h", y=1.02), paper_bgcolor="rgba(0,0,0,0)")
+            st.caption("Every college that fits your filters. Hover for net price; click the legend to hide a group.")
+            st.plotly_chart(m, width="stretch")
 
 # ── My list ──────────────────────────────────────────────────────────────────
 with tab_list:
-    saved = pd.DataFrame(st.session_state.saved.values())
-    if saved.empty:
-        st.markdown('<div class="card">Save schools from the Colleges tab and they show up here, '
-                    'ready to compare and download as a PDF.</div>', unsafe_allow_html=True)
+    if not ready:
+        finish_profile()
     else:
-        saved = saved.sort_values("fit", key=lambda c: c.map(FIT_ORDER))
-        st.markdown("#### Compare side by side")
-        comp = pd.DataFrame({"College": saved["name"], "Fit": saved["fit"]})
-        fmts = {"Net price / yr": ("net_cost", money), "Graduation rate": ("grad_rate", pct),
-                "Admit rate": ("admit_rate", pct), "Earnings after 10 yrs": ("earnings_10y", money)}
-        if "miles" in saved and saved["miles"].notna().any():
-            fmts["Miles from home"] = ("miles", lambda v: "—" if pd.isna(v) else f"{v:.0f}")
-        for label, (k, f) in fmts.items():
-            comp[label] = pd.to_numeric(saved[k], errors="coerce").map(f)
-        st.dataframe(comp, hide_index=True, width="stretch")
-        st.markdown("#### At a glance")
-        metrics = [("net_cost", "Net price / yr", "$,.0f", True), ("grad_rate", "Graduation rate", ".0%", False),
-                   ("earnings_10y", "Earnings after 10 yrs", "$,.0f", False)]
-        if saved["miles"].notna().any() if "miles" in saved else False:
-            metrics.append(("miles", "Miles from home", ",.0f", True))
-        from plotly.subplots import make_subplots
-        order = saved.sort_values("net_cost", na_position="last")
-        fig = make_subplots(rows=1, cols=len(metrics), shared_yaxes=True, horizontal_spacing=0.03,
-                            subplot_titles=[m[1] + (" ↓ better" if m[3] else " ↑ better") for m in metrics])
-        for i, (k, label, fmt, low_good) in enumerate(metrics, 1):
-            vals = pd.to_numeric(order[k], errors="coerce")
-            txt = vals.map(lambda v: "—" if pd.isna(v) else ("$" + format(v, fmt[1:]) if fmt.startswith("$")
-                                                             else format(v, fmt)))
-            fig.add_trace(go.Bar(x=vals.fillna(0), y=order["name"], orientation="h", text=txt,
-                                 textposition="inside", insidetextanchor="end", textfont_color="white",
-                                 marker_color=[FIT_COLORS.get(f, "#95a5a6") for f in order["fit"]],
-                                 hovertemplate="%{y}: %{text}<extra></extra>"), row=1, col=i)
-            fig.update_xaxes(visible=False, row=1, col=i)
-        fig.update_yaxes(autorange="reversed", title=None)
-        fig.update_layout(height=110 + 46 * len(order), margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
-                          plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", bargap=.25)
-        fig.update_annotations(font_size=13)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-        st.caption("Bar colors show the fit: green Safety, blue Match, orange Reach.")
-        c1, c2 = st.columns(2)
-        pdf = build_pdf(saved, careers if not careers.empty else pd.DataFrame(
-            columns=["title", "match", "preparation", "why"]), aid, name)
-        c1.download_button("⬇️ Download my plan (PDF)", pdf, "my_pathways_plan.pdf", "application/pdf",
-                           width="stretch", type="primary")
-        if c2.button("Clear list", width="stretch"):
-            st.session_state.saved = {}
-            st.rerun()
+        saved = pd.DataFrame(st.session_state.saved.values())
+        if saved.empty:
+            st.markdown('<div class="card">Save schools from the Colleges tab and they show up here, '
+                        'ready to compare and download as a PDF.</div>', unsafe_allow_html=True)
+        else:
+            saved = saved.sort_values("fit", key=lambda c: c.map(FIT_ORDER))
+            st.markdown("#### Compare side by side")
+            comp = pd.DataFrame({"College": saved["name"], "Fit": saved["fit"]})
+            fmts = {"Net price / yr": ("net_cost", money), "Graduation rate": ("grad_rate", pct),
+                    "Admit rate": ("admit_rate", pct), "Earnings after 10 yrs": ("earnings_10y", money)}
+            if "miles" in saved and saved["miles"].notna().any():
+                fmts["Miles from home"] = ("miles", lambda v: "—" if pd.isna(v) else f"{v:.0f}")
+            for label, (k, f) in fmts.items():
+                comp[label] = pd.to_numeric(saved[k], errors="coerce").map(f)
+            st.dataframe(comp, hide_index=True, width="stretch")
+            st.markdown("#### At a glance")
+            metrics = [("net_cost", "Net price / yr", "$,.0f", True), ("grad_rate", "Graduation rate", ".0%", False),
+                       ("earnings_10y", "Earnings after 10 yrs", "$,.0f", False)]
+            if saved["miles"].notna().any() if "miles" in saved else False:
+                metrics.append(("miles", "Miles from home", ",.0f", True))
+            from plotly.subplots import make_subplots
+            order = saved.sort_values("net_cost", na_position="last")
+            fig = make_subplots(rows=1, cols=len(metrics), shared_yaxes=True, horizontal_spacing=0.03,
+                                subplot_titles=[m[1] + (" ↓ better" if m[3] else " ↑ better") for m in metrics])
+            for i, (k, label, fmt, low_good) in enumerate(metrics, 1):
+                vals = pd.to_numeric(order[k], errors="coerce")
+                txt = vals.map(lambda v: "—" if pd.isna(v) else ("$" + format(v, fmt[1:]) if fmt.startswith("$")
+                                                                 else format(v, fmt)))
+                fig.add_trace(go.Bar(x=vals.fillna(0), y=order["name"], orientation="h", text=txt,
+                                     textposition="inside", insidetextanchor="end", textfont_color="white",
+                                     marker_color=[FIT_COLORS.get(f, "#95a5a6") for f in order["fit"]],
+                                     hovertemplate="%{y}: %{text}<extra></extra>"), row=1, col=i)
+                fig.update_xaxes(visible=False, row=1, col=i)
+            fig.update_yaxes(autorange="reversed", title=None)
+            fig.update_layout(height=110 + 46 * len(order), margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
+                              plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", bargap=.25)
+            fig.update_annotations(font_size=13)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+            st.caption("Bar colors show the fit: green Safety, blue Match, orange Reach.")
+            c1, c2 = st.columns(2)
+            pdf = build_pdf(saved, careers if not careers.empty else pd.DataFrame(
+                columns=["title", "match", "preparation", "why"]), aid, name)
+            c1.download_button("⬇️ Download my plan (PDF)", pdf, "my_pathways_plan.pdf", "application/pdf",
+                               width="stretch", type="primary")
+            if c2.button("Clear list", width="stretch"):
+                st.session_state.saved = {}
+                st.rerun()
 
 st.markdown("---")
 st.caption("Built by Doussouba Diakite · College data: U.S. Department of Education College Scorecard (public "
