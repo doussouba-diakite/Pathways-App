@@ -96,7 +96,7 @@ scripts/
   build_colleges.py       builds data/colleges.csv from College Scorecard
   build_careers.py        builds data/careers.csv from O*NET
   fairness_audit.py       the fairness check above
-tests/                    34 pytest tests
+tests/                    42 pytest tests
 .github/workflows/        rebuilds career data from O*NET automatically
 ```
 

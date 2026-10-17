@@ -90,3 +90,17 @@ def test_profile_never_goes_in_the_prompt():
     ask("hello", P, C, K, client=client)
     sent = json.dumps(client.calls[0], default=str)
     assert "45000" not in sent and "45,000" not in sent
+
+
+def test_why_school_is_grounded_and_keeps_income_out():
+    from pathways.advisor import why_school
+    from pathways.colleges import match_colleges
+    r = match_colleges(C, P.student, income=P.income, n=0)
+    r = r[r["name"] == "CUNY Hunter College"].iloc[0]
+    price = f"${r['net_cost']:,.0f}"
+    client = FakeClient([text(f"Hunter is a Match, and families like yours pay about {price} a year. "
+                              f"It costs $90,000. Ask about SEEK.")])
+    answer, g = why_school(r, P, client=client)
+    assert [c.text for c in g.unverified] == ["$90,000"]
+    sent = json.dumps(client.calls[0], default=str)
+    assert "45000" not in sent and "45,000" not in sent

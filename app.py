@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from html import escape
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -10,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from pathways import aid as aidmod
-from pathways.advisor import SUGGESTED, Profile, ask
+from pathways.advisor import SUGGESTED, Profile, ask, why_school
 from pathways.careers import LETTERS, NAMES, PLAIN, QUIZ, career_vector, match_careers, profile_from_answers, top_letters
 from pathways.colleges import FIT_ORDER, Student, income_bracket, match_colleges
 from pathways.data import careers_are_sample, load_careers, load_colleges
@@ -192,6 +193,7 @@ answers = {q: st.session_state.get(f"quiz_{i}") for i, q in enumerate(QUIZ)}
 answered = {q: a for q, a in answers.items() if a}
 profile = profile_from_answers(answered)
 careers = match_careers(careers_df(), profile, n=12) if answered else pd.DataFrame()
+prof = Profile(student, income, int(household), status, ny, first_gen, profile if answered else {})
 
 # ── Hero ─────────────────────────────────────────────────────────────────────
 hello = f"Hey {name}, here's" if name else "Here's"
@@ -262,7 +264,6 @@ with tab_ai:
         st.info("Add an Anthropic API key in the sidebar to chat. Everything else in Pathways works without one.")
     elif question:
         chat.append(("user", question, [], None))
-        prof = Profile(student, income, int(household), status, ny, first_gen, profile if answered else {})
         with st.spinner("Checking the data…"):
             try:
                 turn, st.session_state.history = ask(question, prof, colleges, careers_df(),
@@ -377,10 +378,28 @@ with tab_col:
                       <div><div class="kpi">{money(r['earnings_10y'])}</div><div class="muted">earnings, 10 yrs</div></div>
                     </div>
                     <div class="why">{r['why']}</div></div>""", unsafe_allow_html=True)
-                saved = r["unitid"] in st.session_state.saved
-                if st.button("✓ Saved" if saved else "☆ Save to my list", key=f"save_{r['unitid']}",
-                             disabled=saved, width="stretch"):
-                    st.session_state.saved[r["unitid"]] = r.to_dict()
+                uid = r["unitid"]
+                why_ai = st.session_state.setdefault("why_ai", {})
+                if uid in why_ai:
+                    txt, bad = why_ai[uid]
+                    st.markdown(f'<div class="card" style="border-color:rgba(108,92,231,.45)">'
+                                f'<b>✨ Why this school, for you</b><br>{escape(txt)}<div class="check">'
+                                + (f"⚠️ <b>Double-check:</b> {escape(', '.join(bad))} didn't come from the data."
+                                   if bad else "✅ <b>Fact-checked</b> against this school's data.")
+                                + "</div></div>", unsafe_allow_html=True)
+                b1, b2 = st.columns(2)
+                saved = uid in st.session_state.saved
+                if b1.button("✓ Saved" if saved else "☆ Save", key=f"save_{uid}", disabled=saved, width="stretch"):
+                    st.session_state.saved[uid] = r.to_dict()
+                    st.rerun()
+                if b2.button("✨ Why this school?", key=f"why_{uid}", width="stretch", disabled=not KEY or uid in why_ai,
+                             help=None if KEY else "Add an API key in the sidebar to use this."):
+                    with st.spinner("Thinking about this school for you…"):
+                        try:
+                            txt, g = why_school(r, prof, api_key=KEY)
+                            why_ai[uid] = (txt, [c.text for c in g.unverified])
+                        except Exception as e:
+                            st.error(f"Couldn't reach the AI: {e}")
                     st.rerun()
 
 # ── Careers ──────────────────────────────────────────────────────────────────
@@ -511,11 +530,38 @@ with tab_list:
     else:
         saved = saved.sort_values("fit", key=lambda c: c.map(FIT_ORDER))
         st.markdown("#### Compare side by side")
-        comp = saved.set_index("name")[["fit", "net_cost", "grad_rate", "admit_rate", "earnings_10y", "size"]]
-        comp.columns = ["Fit", "Net price / yr", "Graduation rate", "Admit rate", "Earnings after 10 yrs", "Undergrads"]
-        st.dataframe(comp.style.format({"Net price / yr": "${:,.0f}", "Graduation rate": "{:.0%}",
-                                        "Admit rate": "{:.0%}", "Earnings after 10 yrs": "${:,.0f}",
-                                        "Undergrads": "{:,}"}, na_rep="—"), width="stretch")
+        comp = pd.DataFrame({"College": saved["name"], "Fit": saved["fit"]})
+        fmts = {"Net price / yr": ("net_cost", money), "Graduation rate": ("grad_rate", pct),
+                "Admit rate": ("admit_rate", pct), "Earnings after 10 yrs": ("earnings_10y", money)}
+        if "miles" in saved and saved["miles"].notna().any():
+            fmts["Miles from home"] = ("miles", lambda v: "—" if pd.isna(v) else f"{v:.0f}")
+        for label, (k, f) in fmts.items():
+            comp[label] = pd.to_numeric(saved[k], errors="coerce").map(f)
+        st.dataframe(comp, hide_index=True, width="stretch")
+        st.markdown("#### At a glance")
+        metrics = [("net_cost", "Net price / yr", "$,.0f", True), ("grad_rate", "Graduation rate", ".0%", False),
+                   ("earnings_10y", "Earnings after 10 yrs", "$,.0f", False)]
+        if saved["miles"].notna().any() if "miles" in saved else False:
+            metrics.append(("miles", "Miles from home", ",.0f", True))
+        from plotly.subplots import make_subplots
+        order = saved.sort_values("net_cost", na_position="last")
+        fig = make_subplots(rows=1, cols=len(metrics), shared_yaxes=True, horizontal_spacing=0.03,
+                            subplot_titles=[m[1] + (" ↓ better" if m[3] else " ↑ better") for m in metrics])
+        for i, (k, label, fmt, low_good) in enumerate(metrics, 1):
+            vals = pd.to_numeric(order[k], errors="coerce")
+            txt = vals.map(lambda v: "—" if pd.isna(v) else ("$" + format(v, fmt[1:]) if fmt.startswith("$")
+                                                             else format(v, fmt)))
+            fig.add_trace(go.Bar(x=vals.fillna(0), y=order["name"], orientation="h", text=txt,
+                                 textposition="inside", insidetextanchor="end", textfont_color="white",
+                                 marker_color=[FIT_COLORS.get(f, "#95a5a6") for f in order["fit"]],
+                                 hovertemplate="%{y}: %{text}<extra></extra>"), row=1, col=i)
+            fig.update_xaxes(visible=False, row=1, col=i)
+        fig.update_yaxes(autorange="reversed", title=None)
+        fig.update_layout(height=110 + 46 * len(order), margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
+                          plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", bargap=.25)
+        fig.update_annotations(font_size=13)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.caption("Bar colors show the fit: green Safety, blue Match, orange Reach.")
         c1, c2 = st.columns(2)
         pdf = build_pdf(saved, careers if not careers.empty else pd.DataFrame(
             columns=["title", "match", "preparation", "why"]), aid, name)

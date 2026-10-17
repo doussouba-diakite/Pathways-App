@@ -260,3 +260,44 @@ SUGGESTED = [
     "How much aid could I get, and what forms do I need?",
     "Compare Hunter College and Stony Brook for computer science.",
 ]
+
+
+# ── "Why this school?" — one grounded explanation per college card ───────────
+WHY_SYSTEM = """You explain to one student, in 3 short sentences, how a specific college fits them.
+Use ONLY the facts given. Sentence 1: the strongest reason it fits. Sentence 2: an honest trade-off or risk.
+Sentence 3: one concrete next step (a question to ask the school, a program to look up, a form). Plain, warm words.
+Never state a number that isn't in the facts. Never promise admission."""
+
+
+def school_facts(row, p: Profile) -> dict:
+    """The only facts the explanation may use: the card's data plus a few non-sensitive profile items."""
+    def num(k, fmt=None):
+        v = clean(row.get(k))
+        return None if v is None else (fmt.format(v) if fmt else v)
+    return {"college": row.get("name"), "city": row.get("city"), "state": row.get("state"),
+            "type": "Public" if row.get("control") == 1 else "Private nonprofit",
+            "two_year": bool(row.get("two_year")), "undergrads": num("size"),
+            "fit": row.get("fit"), "fit_reason": row.get("why"),
+            "net_price_for_families_like_yours": num("net_cost", "${:,.0f}"),
+            "graduation_rate": num("grad_rate", "{:.0%}"), "admit_rate": num("admit_rate", "{:.0%}"),
+            "median_earnings_10_years": num("earnings_10y", "${:,.0f}"),
+            "miles_from_home": num("miles", "{:.0f}"),
+            "share_of_degrees_in_your_major": num("major_share", "{:.0%}") if row.get("major_share") else None,
+            "student": {"gpa": p.student.gpa, "intended_major": p.student.major or None,
+                        "first_generation": p.first_gen,
+                        "opportunity_programs_likely": aidmod.screen(aidmod.AidInput(
+                            income=p.income, household=p.household, ny_resident=p.ny_resident,
+                            status=p.status, first_gen=p.first_gen)).opportunity_programs}}
+
+
+def why_school(row, p: Profile, client=None, api_key: str | None = None) -> tuple[str, Grounding]:
+    if client is None:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    facts = school_facts(row, p)
+    resp = client.messages.create(model=MODEL, max_tokens=400, system=WHY_SYSTEM,
+                                  messages=[{"role": "user", "content": json.dumps(facts, default=str)}])
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    raw = {k: clean(row.get(k)) for k in ("net_cost", "grad_rate", "admit_rate", "earnings_10y", "miles",
+                                            "major_share", "size")}
+    return text, verify(text, [json.dumps(facts, default=str), json.dumps(raw, default=str)], money_rel=0.03)
