@@ -100,8 +100,8 @@ if "restored" not in st.session_state:
                 st.session_state[k] = cast(st.query_params[k])
             except ValueError:
                 pass
-    if "states" not in st.session_state:
-        st.session_state.states = ["NY"]
+    for k, v in {"states": ["NY"], "years": "4-year", "control": "Any", "fitf": "All"}.items():
+        st.session_state.setdefault(k, v)
 
 DISTANCES = ["Anywhere in my states", "10 miles", "25 miles", "50 miles", "100 miles", "250 miles"]
 
@@ -138,8 +138,8 @@ with st.sidebar:
         states = st.multiselect("States", STATES, key="states",
                                 disabled=bool(home) and how_far != DISTANCES[0],
                                 help="Turned off while a distance is set: a radius can cross state lines.")
-        years = st.segmented_control("Program length", ["4-year", "2-year", "Any"], default="4-year", key="years")
-        control = st.segmented_control("Type", ["Any", "Public", "Private"], default="Any", key="control")
+        years = st.segmented_control("Program length", ["4-year", "2-year", "Any"], key="years")
+        control = st.segmented_control("Type", ["Any", "Public", "Private"], key="control")
         size = st.selectbox("Size", ["Any", "Small (under 5k)", "Medium (5k-15k)", "Large (15k+)"])
         c1, c2 = st.columns(2)
         hbcu = c1.checkbox("HBCU")
@@ -307,7 +307,7 @@ with tab_col:
 
         st.markdown(f"### {title} ({len(show)})")
         f1, f2 = st.columns([1.2, 1])
-        f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], default="All", key="fitf")
+        f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], key="fitf")
         sorts = ["Best match", "Cheapest", "Highest graduation"] + (["Closest"] if home else [])
         order = f2.selectbox("Sort by", sorts, key="sortby")
         by = {"Cheapest": ("net_cost", True), "Highest graduation": ("grad_rate", False),
