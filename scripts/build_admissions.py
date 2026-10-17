@@ -21,8 +21,9 @@ UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, 
 TEST_POLICY = {1: "Required", 2: "Recommended", 5: "Optional", 3: "Not considered"}
 
 
-def fetch(prefix: str) -> tuple[pd.DataFrame, str]:
-    for year in range(2025, 2018, -1):
+def fetch(prefix: str, need: tuple[str, ...]) -> tuple[pd.DataFrame, str]:
+    """Newest year whose file has one of the `need` columns."""
+    for year in range(2025, 2016, -1):
         url = BASE.format(name=f"{prefix}{year}")
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120) as r:
@@ -32,7 +33,10 @@ def fetch(prefix: str) -> tuple[pd.DataFrame, str]:
             continue
         csvs = sorted((n for n in z.namelist() if n.lower().endswith(".csv")), key=lambda n: "_rv" not in n.lower())
         df = pd.read_csv(z.open(csvs[0]), encoding="latin-1", low_memory=False)
-        df.columns = [c.strip().upper() for c in df.columns]
+        df.columns = [c.strip().upper().lstrip("\ufeff") for c in df.columns]
+        if not any(n in df.columns for n in need):
+            print(f"::warning::{prefix}{year} has no {need}; first columns: {list(df.columns)[:40]}")
+            continue
         print(f"::warning::using {prefix}{year} ({csvs[0]}, {len(df)} rows)")
         return df, str(year)
     sys.exit(f"::error::no {prefix} file found")
@@ -48,8 +52,16 @@ def col(df: pd.DataFrame, *names: str, contains: str = "") -> pd.Series:
     return pd.Series(pd.NA, index=df.index, dtype="Float64")
 
 
-ic, ic_year = fetch("IC")
-adm, adm_year = fetch("ADM")
+import traceback  # noqa: E402
+
+try:
+    ic, ic_year = fetch("IC", ("APPLFEEU", "APPLFEEUG", "APPLFEE"))
+    adm, adm_year = fetch("ADM", ("ADMCON7", "ADMCON07"))
+except SystemExit:
+    raise
+except Exception:
+    print("::warning::" + traceback.format_exc().replace("\n", " | "))
+    raise
 fee = col(ic, "APPLFEEU", "APPLFEEUG", "APPLFEE", contains="FEE")
 out = pd.DataFrame({"unitid": ic["UNITID"], "app_fee": fee.where(fee >= 0)})
 pol = pd.DataFrame({"unitid": adm["UNITID"],
