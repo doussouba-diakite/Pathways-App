@@ -60,7 +60,7 @@ TOOLS = [
          "max_net_price": {"type": "number", "description": "Max yearly price after grants"},
          "control": {"type": "string", "enum": ["Any", "Public", "Private"]},
          "years": {"type": "string", "enum": ["4-year", "2-year", "Any"]},
-         "sort_by": {"type": "string", "enum": ["best_match", "cheapest", "graduation_rate", "earnings"]},
+         "sort_by": {"type": "string", "enum": ["best_match", "cheapest", "graduation_rate", "earnings", "closest"]},
          "limit": {"type": "integer", "description": "1-10, default 6"}}}},
     {"name": "college_details",
      "description": "Everything known about one college by name (partial names work, e.g. 'Hunter' or "
@@ -84,7 +84,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"interest": {"type": "string"}}, "required": ["interest"]}},
 ]
 
-FIELDS = ["name", "city", "state", "fit", "why", "net_price_for_you", "sticker_price", "grad_rate",
+FIELDS = ["name", "city", "state", "miles", "fit", "why", "net_price_for_you", "sticker_price", "grad_rate",
           "earnings_10y", "admit_rate"]
 
 
@@ -115,6 +115,10 @@ def _college_rows(df: pd.DataFrame, cols=FIELDS) -> list[dict]:
     out = []
     for _, r in df.iterrows():
         d = {c: clean(r.get(c)) for c in cols}
+        if d.get("miles") is None:
+            d.pop("miles", None)
+        else:
+            d["miles_from_home"] = d.pop("miles")
         for k in ("net_price_for_you", "sticker_price", "earnings_10y"):
             if d.get(k) is not None:
                 d[k] = round(d[k])
@@ -138,7 +142,7 @@ def run_tool(name: str, args: dict, p: Profile, colleges: pd.DataFrame, careers:
         if args.get("fit"):
             df = df[df["fit"].isin(args["fit"])]
         sort = {"cheapest": ("net_cost", True), "graduation_rate": ("grad_rate", False),
-                "earnings": ("earnings_10y", False)}.get(args.get("sort_by", ""))
+                "earnings": ("earnings_10y", False), "closest": ("miles", True)}.get(args.get("sort_by", ""))
         if sort:
             df = df.sort_values(sort[0], ascending=sort[1], na_position="last")
         n = max(1, min(10, int(args.get("limit") or 6)))

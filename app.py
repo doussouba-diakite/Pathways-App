@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlencode
 
 import pandas as pd
 import plotly.express as px
@@ -13,6 +14,7 @@ from pathways.advisor import SUGGESTED, Profile, ask
 from pathways.careers import LETTERS, NAMES, PLAIN, QUIZ, career_vector, match_careers, profile_from_answers, top_letters
 from pathways.colleges import FIT_ORDER, Student, income_bracket, match_colleges
 from pathways.data import careers_are_sample, load_careers, load_colleges
+from pathways.distance import zip_location
 from pathways.majors import CIP_FAMILIES, cip_families_for
 from pathways.report import build_pdf
 
@@ -45,6 +47,15 @@ st.markdown("""
 .tool {display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: .72rem; font-weight: 600;
        margin: 0 6px 6px 0; background: rgba(108,92,231,.14); color: #6c5ce7;}
 .check {font-size: .8rem; margin-top: 4px;}
+.hero {padding-bottom: 118px;}
+.st-key-herostats {margin-top: -122px; padding: 0 32px 18px; position: relative; z-index: 2;}
+.st-key-herostats button {background: rgba(255,255,255,.16) !important; border: 1px solid rgba(255,255,255,.28) !important;
+       border-radius: 14px !important; color: white !important; min-height: 76px; justify-content: flex-start;
+       text-align: left; transition: transform .15s ease, background .15s ease;}
+.st-key-herostats button:hover {background: rgba(255,255,255,.28) !important; transform: translateY(-2px);}
+.st-key-herostats button p {color: white !important; margin: 0; font-size: .82rem; text-align: left;}
+.st-key-herostats button strong {font-size: 1.6rem; display: block; line-height: 1.2;}
+.st-key-herostats button div {justify-content: flex-start;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,25 +88,58 @@ def api_key():
 if "saved" not in st.session_state:
     st.session_state.saved = {}
 
+# ── Shared links: restore a profile from the URL (once per session) ─────────
+# Only school-search settings are shared. Income, status, and name never go in a link.
+SHARE_KEYS = {"gpa": float, "major": str, "zip": str, "miles": str, "n": int, "years": str, "control": str,
+              "states": lambda v: [x for x in v.split(",") if x]}
+if "restored" not in st.session_state:
+    st.session_state.restored = True
+    for k, cast in SHARE_KEYS.items():
+        if k in st.query_params:
+            try:
+                st.session_state[k] = cast(st.query_params[k])
+            except ValueError:
+                pass
+    if "states" not in st.session_state:
+        st.session_state.states = ["NY"]
+
+DISTANCES = ["Anywhere in my states", "10 miles", "25 miles", "50 miles", "100 miles", "250 miles"]
+
 # ── Sidebar: the student's profile ───────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🧭 Your profile")
     name = st.text_input("First name (optional)", placeholder="Taty")
-    gpa = st.slider("Unweighted GPA", 1.5, 4.0, 3.3, 0.05)
+    gpa = st.slider("Unweighted GPA", 1.5, 4.0, 3.3, 0.05, key="gpa")
     test = st.segmented_control("Test scores", ["None", "SAT", "ACT"], default="None")
     sat = st.slider("SAT total", 400, 1600, 1150, 10) if test == "SAT" else None
     act = st.slider("ACT composite", 1, 36, 24) if test == "ACT" else None
-    major = st.text_input("Intended major", placeholder="computer science, nursing, business…")
+    major = st.text_input("Intended major", placeholder="computer science, nursing, business…", key="major")
     fams = cip_families_for(major)
     if major and not fams:
         st.caption("No match for that major yet. Try a broader word, like 'engineering' or 'health'.")
     elif fams:
         st.caption("Matching programs in: " + ", ".join(CIP_FAMILIES[f] for f in fams))
 
+    with st.expander("📍 Distance from home", expanded=True):
+        c1, c2 = st.columns([1, 1.4])
+        zip_code = c1.text_input("Home ZIP", placeholder="11201", max_chars=5, key="zip")
+        how_far = c2.selectbox("Within", DISTANCES, key="miles")
+        home = zip_location(zip_code)
+        if zip_code and not home:
+            st.caption("We don't recognize that ZIP code. Use 5 digits, like 11201.")
+        elif home:
+            st.caption(f"📍 {home[2]}" + ("" if how_far == DISTANCES[0] else
+                       f" · showing schools within {how_far}, in any state"))
+
+    n_show = st.slider("How many schools in my list", 5, 50, 15, 5, key="n",
+                       help="Your list keeps a balance of Safety, Match, and Reach schools.")
+
     with st.expander("🏫 School preferences", expanded=True):
-        states = st.multiselect("States", STATES, default=["NY"])
-        years = st.segmented_control("Program length", ["4-year", "2-year", "Any"], default="4-year")
-        control = st.segmented_control("Type", ["Any", "Public", "Private"], default="Any")
+        states = st.multiselect("States", STATES, key="states",
+                                disabled=bool(home) and how_far != DISTANCES[0],
+                                help="Turned off while a distance is set: a radius can cross state lines.")
+        years = st.segmented_control("Program length", ["4-year", "2-year", "Any"], default="4-year", key="years")
+        control = st.segmented_control("Type", ["Any", "Public", "Private"], default="Any", key="control")
         size = st.selectbox("Size", ["Any", "Small (under 5k)", "Medium (5k-15k)", "Large (15k+)"])
         c1, c2 = st.columns(2)
         hbcu = c1.checkbox("HBCU")
@@ -116,12 +160,14 @@ with st.sidebar:
 
 student = Student(gpa=gpa, sat=sat, act=act, states=states, size=size, control=control or "Any",
                   years=years or "4-year", hbcu_only=hbcu, womens_only=womens, major=major,
-                  max_cost=None if budget >= 60_000 else budget)
+                  max_cost=None if budget >= 60_000 else budget,
+                  home=home[:2] if home else None,
+                  max_miles=None if how_far == DISTANCES[0] else float(how_far.split()[0]))
 aid = aidmod.screen(aidmod.AidInput(income=income, household=int(household), ny_resident=ny,
                                     status=status, first_gen=first_gen))
 colleges = colleges_df()
 all_matches = match_colleges(colleges, student, income=income, n=0)
-picks = match_colleges(colleges, student, income=income, n=15)
+picks = match_colleges(colleges, student, income=income, n=n_show)
 
 # ── Career quiz state (answered on the Careers tab) ──────────────────────────
 answers = {q: st.session_state.get(f"quiz_{i}") for i, q in enumerate(QUIZ)}
@@ -136,17 +182,30 @@ st.markdown(f"""
 <div class="hero">
   <h1>Pathways</h1>
   <p>{hello} where you can get in, what you'd really pay, and careers that fit you.</p>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px">
-    <div class="stat"><b>{len(all_matches):,}</b><span>colleges fit your filters</span></div>
-    <div class="stat"><b>{(all_matches['fit'] == 'Safety').sum() if len(all_matches) else 0}</b><span>likely admits (Safety)</span></div>
-    <div class="stat"><b>{money(aid.total)}</b><span>est. Pell + TAP per year</span></div>
-    <div class="stat"><b>{code}</b><span>your interest code</span></div>
-  </div>
 </div>""", unsafe_allow_html=True)
 
-tab_ai, tab_col, tab_car, tab_aid, tab_map, tab_list = st.tabs(
-    ["✨ Ask the AI advisor", "🎓 Colleges", "🧭 Careers", "💸 Aid", "🗺️ Map",
-     f"⭐ My list ({len(st.session_state.saved)})"])
+TABS = ["✨ Ask the AI advisor", "🎓 Colleges", "🧭 Careers", "💸 Aid", "🗺️ Map", "⭐ My list"]
+
+
+def go_to(tab: str, fit: str | None = None):
+    st.session_state.nav = tab
+    if fit:
+        st.session_state.fitf = fit
+
+
+n_safe = int((all_matches["fit"] == "Safety").sum()) if len(all_matches) else 0
+with st.container(key="herostats"):
+    c = st.columns(4)
+    c[0].button(f"**{len(all_matches):,}**\n\ncolleges fit your filters →", on_click=go_to, args=(TABS[1], "All"),
+                width="stretch", key="hs_all")
+    c[1].button(f"**{n_safe}**\n\nlikely admits (Safety) →", on_click=go_to, args=(TABS[1], "Safety"),
+                width="stretch", key="hs_safe")
+    c[2].button(f"**{money(aid.total)}**\n\nest. Pell + TAP per year →", on_click=go_to, args=(TABS[3],),
+                width="stretch", key="hs_aid")
+    c[3].button(f"**{code}**\n\nyour interest code →", on_click=go_to, args=(TABS[2],),
+                width="stretch", key="hs_code")
+
+tab_ai, tab_col, tab_car, tab_aid, tab_map, tab_list = st.tabs(TABS, key="nav", on_change="rerun")
 
 # ── AI advisor (Claude + the matching engines) ───────────────────────────────
 KEY = api_key() or st.session_state.get("user_key") or None
@@ -238,12 +297,49 @@ with tab_col:
             ranked by program strength in your major, graduation rate, then price.</div>""", unsafe_allow_html=True)
 
         chosen_ids = [p["customdata"][0] for p in (sel.selection.points if sel and sel.selection else [])]
-        show = all_matches[all_matches["unitid"].isin(chosen_ids)] if chosen_ids else picks
-        title = f"Selected on the chart ({len(show)})" if chosen_ids else "Your balanced list"
-        fit_filter = st.segmented_control("Show", ["All", "Safety", "Match", "Reach"], default="All", key="fitf")
-        if fit_filter and fit_filter != "All":
-            show = show[show["fit"] == fit_filter]
-        st.markdown(f"### {title}")
+        fit_filter = st.session_state.get("fitf") or "All"
+        if chosen_ids:
+            show, title = all_matches[all_matches["unitid"].isin(chosen_ids)], f"Selected on the chart"
+        elif fit_filter != "All":  # a single fit: show every matching school of that kind, not just the picks
+            show, title = all_matches[all_matches["fit"] == fit_filter].head(n_show), f"Your {fit_filter} schools"
+        else:
+            show, title = picks, "Your balanced list"
+
+        st.markdown(f"### {title} ({len(show)})")
+        f1, f2 = st.columns([1.2, 1])
+        f1.segmented_control("Show", ["All", "Safety", "Match", "Reach"], default="All", key="fitf")
+        sorts = ["Best match", "Cheapest", "Highest graduation"] + (["Closest"] if home else [])
+        order = f2.selectbox("Sort by", sorts, key="sortby")
+        by = {"Cheapest": ("net_cost", True), "Highest graduation": ("grad_rate", False),
+              "Closest": ("miles", True)}.get(order)
+        if by:
+            show = show.sort_values(by[0], ascending=by[1], na_position="last")
+
+        # Take your matches with you: spreadsheet, PDF, or a link
+        export = show[["name", "city", "state", "fit", "why", "net_cost", "grad_rate", "admit_rate",
+                       "earnings_10y", "miles", "website"]].rename(columns={
+            "name": "College", "city": "City", "state": "State", "fit": "Fit", "why": "Why",
+            "net_cost": "Net price per year", "grad_rate": "Graduation rate", "admit_rate": "Admit rate",
+            "earnings_10y": "Earnings after 10 years", "miles": "Miles from home", "website": "Website"})
+        if not home:
+            export = export.drop(columns="Miles from home")
+        d1, d2, d3 = st.columns(3)
+        d1.download_button("⬇️ Spreadsheet (CSV)", export.to_csv(index=False).encode(), "my_college_matches.csv",
+                           "text/csv", width="stretch")
+        d2.download_button("⬇️ PDF report", build_pdf(show, careers if not careers.empty else pd.DataFrame(
+            columns=["title", "match", "preparation", "why"]), aid, name), "my_college_matches.pdf",
+                           "application/pdf", width="stretch")
+        with d3.popover("🔗 Share", width="stretch"):
+            params = {"gpa": gpa, "n": n_show, "years": years or "4-year", "control": control or "Any"}
+            if major:
+                params["major"] = major
+            if home and how_far != DISTANCES[0]:
+                params |= {"zip": zip_code, "miles": how_far}
+            else:
+                params["states"] = ",".join(states)
+            base = (st.context.url or "").split("?")[0]
+            st.caption("Anyone with this link sees the same search. Your income, status, and name are not included.")
+            st.code(f"{base}?{urlencode(params)}", language=None, wrap_lines=True)
 
         cols = st.columns(2)
         for i, (_, r) in enumerate(show.head(30).iterrows()):
@@ -255,7 +351,7 @@ with tab_col:
                 strength = (f" · {r['major_share']:.0%} of degrees in your major"
                             if major and r.get("major_share", 0) > 0 else "")
                 st.markdown(f"""<div class="card">
-                    {badge}<span class="muted">{r['city']}, {r['state']}</span>
+                    {badge}<span class="muted">{r['city']}, {r['state']}{f" · 📍 {r['miles']:.0f} mi" if pd.notna(r.get('miles')) else ""}</span>
                     <h4>{r['name']}</h4><div class="muted">{tags}{strength}</div>
                     <div style="display:flex;gap:26px;margin-top:10px">
                       <div><div class="kpi">{money(r['net_cost'])}</div><div class="muted">net price / yr</div></div>

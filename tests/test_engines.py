@@ -1,3 +1,4 @@
+from pathlib import Path
 import pandas as pd
 import pytest
 
@@ -113,3 +114,22 @@ def test_opportunity_limit_grows_with_household():
     limits = [aid.opportunity_limit(n) for n in range(1, 11)]
     assert limits == sorted(limits)
     assert aid.opportunity_limit(10) == aid.OPP_LIMITS[8] + 2 * aid.OPP_EXTRA_PERSON
+
+
+# ── Distance from home ───────────────────────────────────────────────────────
+def test_zip_lookup_and_miles():
+    from pathways.distance import miles, zip_location
+    lat, lon, place = zip_location("11201")
+    assert place == "Brooklyn, NY"
+    # Brooklyn -> Albany is about 135 miles as the crow flies
+    assert 125 < miles(lat, lon, [42.65], [-73.75])[0] < 145
+    assert zip_location("abcde") is None and zip_location("00000") is None
+
+
+def test_radius_replaces_state_filter_and_crosses_state_lines():
+    from pathways.distance import zip_location
+    colleges = pd.read_csv(Path(__file__).resolve().parent.parent / "data" / "colleges.csv")
+    home = zip_location("11201")[:2]
+    df = match_colleges(colleges, Student(gpa=3.3, states=["NY"], home=home, max_miles=25), income=45_000, n=0)
+    assert len(df) and df["miles"].max() <= 25
+    assert "NJ" in set(df["state"])  # a radius from Brooklyn reaches New Jersey

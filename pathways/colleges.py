@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from .distance import add_miles
 from .majors import cip_families_for
 
 SAFETY, MATCH, REACH, UNKNOWN = "Safety", "Match", "Reach", "Unknown"
@@ -35,6 +36,8 @@ class Student:
     womens_only: bool = False
     major: str = ""
     max_cost: float | None = None     # yearly budget after aid, optional
+    home: tuple[float, float] | None = None   # (lat, lon) from the student's ZIP code
+    max_miles: float | None = None    # only schools within this distance; replaces the state filter
 
 
 def classify(student: Student, school: pd.Series) -> tuple[str, str]:
@@ -90,7 +93,11 @@ def yearly_cost(school: pd.Series) -> float | None:
 def filter_colleges(colleges: pd.DataFrame, s: Student) -> pd.DataFrame:
     df = colleges
     df = df[df["control"].isin([1, 2])]  # leave out for-profit schools
-    if s.states:
+    if s.home and s.max_miles:
+        # A radius crosses state lines (Brooklyn -> NJ, CT), so it replaces the state filter.
+        df = add_miles(df, s.home)
+        df = df[df["miles"] <= s.max_miles]
+    elif s.states:
         df = df[df["state"].isin(s.states)]
     lo, hi = SIZE_BANDS.get(s.size, SIZE_BANDS["Any"])
     if s.size != "Any":
@@ -130,6 +137,8 @@ def match_colleges(colleges: pd.DataFrame, s: Student, income: float | None = No
     df = filter_colleges(colleges, s).copy()
     if df.empty:
         return df
+    if "miles" not in df.columns:
+        df = add_miles(df, s.home)
 
     fits = df.apply(lambda r: classify(s, r), axis=1)
     df["fit"] = [f for f, _ in fits]

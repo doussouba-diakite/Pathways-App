@@ -3,3 +3,4 @@ pandas>=2.2
 plotly>=5.24
 reportlab>=4.0
 anthropic>=0.40
+zipcodes>=1.2

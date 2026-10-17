@@ -8,6 +8,8 @@ Most college search tools assume you have a counselor. A lot of students don't. 
 2. **What would I actually pay?** Real average net price for families at *your* income, not the sticker price.
 3. **What careers fit me?** A six-question interest quiz matched against U.S. Department of Labor career profiles.
 
+It also matches by **distance from home** (enter a ZIP code and a radius, across state lines), lets students choose how many schools to see, and exports the list as a spreadsheet, a PDF, or a share link that leaves out income and status.
+
 And when a student has a question the screens don't answer, they can **ask the AI advisor**.
 
 ![Colleges tab](docs/colleges.png)
@@ -74,6 +76,7 @@ app.py                    Streamlit interface (6 tabs, AI chat, interactive Plot
 pathways/
   advisor.py              the AI advisor: Claude + 5 tools + an agent loop
   grounding.py            fact-checker for AI answers
+  distance.py             ZIP code -> miles to every college (offline ZIP data)
   colleges.py             filter, classify, rank, balance
   careers.py              quiz, RIASEC profile, cosine similarity
   aid.py                  Pell, TAP, Dream Act, opportunity programs
@@ -83,7 +86,7 @@ scripts/
   build_colleges.py       builds data/colleges.csv from College Scorecard
   build_careers.py        builds data/careers.csv from O*NET
   fairness_audit.py       the fairness check above
-tests/                    32 pytest tests
+tests/                    34 pytest tests
 .github/workflows/        rebuilds career data from O*NET automatically
 ```
 
